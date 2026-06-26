@@ -106,6 +106,12 @@ def get_venv_python(project_dir):
 
 
 def setup(skip_tests=False):
+    # Quick check: is venv module available?
+    try:
+        import venv
+    except ImportError:
+        print_error("venv module not found. Install with: pip install virtualenv")
+        return False
     project_dir = Path(__file__).parent.resolve()
     total_steps = 4
 
@@ -157,7 +163,7 @@ def setup(skip_tests=False):
             try:
                 shutil.rmtree(venv_dir)
             except PermissionError:
-                print_error("Cannot delete locked venv. Please close all Python processes and try again.")
+                print_error("Cannot delete locked venv. Close all other Python processes and try again.")
                 return False
 
         result = subprocess.run(

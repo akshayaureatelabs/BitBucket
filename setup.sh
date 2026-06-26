@@ -1,9 +1,5 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "."
 echo "Starting cross-platform setup..."
 echo ""
-python3 setup_all.py "$@" || python setup_all.py "$@"
-if [ $? -ne 0 ]; then
-    echo ""
-    echo "[ERROR] Setup failed! Check the output above."
-fi
+python3 setup_all.py "$@" 2>/dev/null || python setup_all.py "$@"
