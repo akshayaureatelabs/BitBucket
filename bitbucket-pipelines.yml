@@ -1,0 +1,152 @@
+
+image: python:3.11
+
+options:
+  max-time: 30
+  docker: true
+  size: 2x
+
+definitions:
+  caches:
+    pip-custom: /root/.cache/pip
+    pytest-cache: /root/.cache/pytest
+    
+  steps:
+    - step: &smart-cache
+        name: Smart Cache Setup
+        caches: [pip-custom, pytest-cache]
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements.txt
+          - pip freeze > installed-packages.txt
+        artifacts: [installed-packages.txt]
+
+    - step: &precheck
+        name: Pre-merge Validation
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - pytest test_precheck.py -v --junitxml=test-results/precheck.xml
+        artifacts: [test-results/precheck.xml]
+
+    - step: &test-impact
+        name: Test Impact Analysis
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - python smart_test_selector.py --generate-matrix --summary
+        artifacts: [test-matrix.json]
+
+    - step: &lint-format
+        name: Lint & Format
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - black --check . --diff
+          - isort --check-only . --diff
+          - flake8 . --max-line-length=120 --statistics
+          - pylint **/*.py --fail-under=8.0 || true
+        artifacts: [lint-report.txt]
+
+    - step: &type-check
+        name: Type Checking
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - mypy . --ignore-missing-imports --strict
+        artifacts: [mypy-report.txt]
+
+    - step: &security-scan
+        name: Security Scan
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - bandit -r . -ll -f json -o bandit-report.json
+          - pip-audit --requirement requirements.txt -f json -o pip-audit.json
+        artifacts: [bandit-report.json, pip-audit.json]
+
+    - step: &tests-coverage
+        name: Tests & Coverage
+        caches: [pip-custom, pytest-cache]
+        script:
+          - pip install -r requirements.txt
+          - |
+            if [ -f test-matrix.json ]; then
+              python -c "import json; tests = json.load(open('test-matrix.json'))['tests']; print('Running:', tests)"
+              pytest ${TESTS:-tests/} -n auto --dist loadscope \
+                --cov=. --cov-report=xml --cov-report=html \
+                --cov-fail-under=85 \
+                --junitxml=test-results/results.xml \
+                --html=test-results/report.html \
+                --self-contained-html
+            else
+              pytest tests/ -n auto --dist loadscope \
+                --cov=. --cov-report=xml --cov-report=html \
+                --cov-fail-under=85 \
+                --junitxml=test-results/results.xml \
+                --html=test-results/report.html \
+                --self-contained-html
+            fi
+        artifacts:
+          - test-results/**
+          - coverage.xml
+          - htmlcov/**
+
+    - step: &complexity-check
+        name: Complexity & Dead Code
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - radon cc . -s -n B --json > radon-report.json
+          - vulture . --min-confidence 80 --sort-by-size > vulture-report.txt
+        artifacts: [radon-report.json, vulture-report.txt]
+
+    - step: &performance-benchmark
+        name: Performance Benchmark
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - python performance_benchmark.py --run-benchmarks --generate-report
+          - python performance_benchmark.py --compare-baseline
+        artifacts: [.benchmarks/**]
+
+    - step: &dependency-health
+        name: Dependency Health
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - python dependency_health.py --check-all --generate-report --fail-on-issues
+        artifacts: [dependency-reports/**]
+
+    - step: &pipeline-dashboard
+        name: Pipeline Dashboard
+        caches: [pip-custom]
+        script:
+          - pip install -r requirements.txt
+          - python pipeline_dashboard.py --record-metrics
+          - python pipeline_dashboard.py --generate-dashboard --days 30
+        artifacts: [pipeline-metrics.db, dashboard/**]
+
+pipelines:
+  pull-requests:
+    "**":
+      - parallel: [*smart-cache, *precheck]
+      - step: *test-impact
+      - parallel: [*lint-format, *type-check, *security-scan, *complexity-check]
+      - step: *tests-coverage
+      - parallel: [*performance-benchmark, *dependency-health]
+      - step: *pipeline-dashboard
+
+  branches:
+    main:
+      - parallel: [*smart-cache, *precheck]
+      - step: *test-impact
+      - parallel: [*lint-format, *type-check, *security-scan, *complexity-check]
+      - step: *tests-coverage
+      - parallel: [*performance-benchmark, *dependency-health]
+      - step: *pipeline-dashboard
+
+  default:
+    - parallel: [*smart-cache, *precheck]
+    - parallel: [*lint-format, *type-check]
+    - step: *tests-coverage
