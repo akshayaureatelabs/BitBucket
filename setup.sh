@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd "."
+cd "$(dirname "$0")"
 
 echo "========================================"
 echo "  BitBucket QA Suite - One-Click Setup"
