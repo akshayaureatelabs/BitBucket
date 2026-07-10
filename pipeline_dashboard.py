@@ -1,6 +1,8 @@
 """
 Pipeline Dashboard - Track and visualize pipeline metrics
 Phase 1 Feature: Pipeline Metrics & Dashboard
+
+Author: Sr. QA Tester - Akshaykumar Dudhwala
 """
 
 import os
@@ -15,10 +17,13 @@ from typing import Dict, List, Any
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PipelineDashboard:
     def __init__(self):
-        self.base_dir = Path(__file__).parent.parent
+        self.base_dir = Path(__file__).parent
         self.db_path = self.base_dir / 'pipeline-metrics.db'
         self.dashboard_dir = self.base_dir / 'dashboard'
         self.dashboard_dir.mkdir(exist_ok=True)
@@ -110,6 +115,11 @@ class PipelineDashboard:
             data.get('triggered_by'),
             data.get('pipeline_type')
         ))
+        
+        run_id = data.get('run_id')
+        cursor.execute('DELETE FROM step_metrics WHERE run_id = ?', (run_id,))
+        cursor.execute('DELETE FROM test_results WHERE run_id = ?', (run_id,))
+        cursor.execute('DELETE FROM performance_metrics WHERE run_id = ?', (run_id,))
         
         for i, step in enumerate(data.get('steps', [])):
             cursor.execute('''
@@ -351,7 +361,7 @@ class PipelineDashboard:
             
             self.record_run(run_data)
         
-        print("Sample data generated")
+        logger.info("Sample data generated")
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline Dashboard")
@@ -360,6 +370,7 @@ def main():
     parser.add_argument("--simulate-data", action="store_true", help="Generate sample data for testing")
     parser.add_argument("--days", type=int, default=30, help="Number of days to include")
     
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     args = parser.parse_args()
     dashboard = PipelineDashboard()
     
@@ -368,7 +379,7 @@ def main():
     
     if args.generate_dashboard:
         dashboard_file = dashboard.generate_dashboard(args.days)
-        print(f"Dashboard generated: {dashboard_file}")
+        logger.info("Dashboard generated: %s", dashboard_file)
     
     if args.record_metrics:
         run_data = {
@@ -384,7 +395,7 @@ def main():
             'steps': []
         }
         dashboard.record_run(run_data)
-        print("Metrics recorded")
+        logger.info("Metrics recorded")
 
 if __name__ == "__main__":
     main()

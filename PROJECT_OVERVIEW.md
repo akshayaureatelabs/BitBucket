@@ -1,8 +1,8 @@
 # BitBucket Pipeline QA & Utility Suite — Complete Project Overview
 
-> **Version:** 1.0.0  
-> **Last Updated:** June 26, 2026  
-> **Status:** Production Ready  
+> **Version:** 1.1.0  
+> **Last Updated:** June 29, 2026  
+> **Status:** Ready for Deployment  
 > **Python:** 3.11+ (tested on 3.14.5)  
 > **Platform:** Windows, Linux, macOS
 
@@ -107,9 +107,10 @@ BitBucket/
 ├── dependency_health.py        # Dependency vulnerability & health checking
 ├── pipeline_dashboard.py       # Interactive pipeline metrics dashboard
 │
-├── test_precheck.py            # Pre-merge validation tests (5 test cases)
+├── test_precheck.py            # Pre-merge validation tests (4 test cases)
 ├── tests/
-│   └── test_sample.py          # Sample test suite (2 test cases)
+│   ├── test_sample.py          # Sample test suite (2 test cases)
+│   └── test_fixes.py           # Unit tests for v1.1.0 fixes (13 test cases)
 │
 ├── fix_encoding.bat            # Fix encoding issues (Windows)
 ├── fix_encoding.sh             # Fix encoding issues (Linux/macOS)
@@ -277,7 +278,7 @@ python performance_benchmark.py --check-regressions 15.0
 - **PyUp** — Additional vulnerability data
 - **pypistats.org** — Download statistics
 
-**Caching:** Results cached for 24 hours (PyPI) and 6 hours (vulnerabilities)
+**Caching:** Results cached for 24 hours (PyPI, pypistats) and 6 hours (vulnerabilities). All caches persisted to disk via `_save_caches()`.
 
 **CLI:**
 ```bash
@@ -499,8 +500,9 @@ Developer Push
 
 | Layer | File | Tests | Purpose |
 |-------|------|-------|---------|
-| **Precheck** | `test_precheck.py` | 5 | Syntax validation, file existence |
+| **Precheck** | `test_precheck.py` | 4 | Syntax validation, file existence (CWD-independent) |
 | **Sample** | `tests/test_sample.py` | 2 | Import validation, basic sanity |
+| **Unit** | `tests/test_fixes.py` | 13 | `_strip_extras()`, pypistats caching, tracemalloc guard |
 | **Integration** | Pipeline stages | All | End-to-end pipeline validation |
 | **Manual** | setup_all.py | 4 tool checks | Verify all tools import correctly |
 
@@ -517,7 +519,7 @@ Developer Push
 PR Created
     │
     ▼
-Stage 1: Precheck (5 tests, fast)
+Stage 1: Precheck (4 precheck tests, fast)
     │
     ▼
 Stage 2: Test Impact Analysis → test-matrix.json
@@ -549,12 +551,32 @@ Pipeline PASSES ✓
 | 5 | `setup.sh` | CRLF line endings break on Linux/macOS | Converted to LF, rewrote as thin wrapper | Medium |
 | 6 | `setup_all.py` | `shell=True` with list + paths containing spaces breaks on Windows | Removed `shell=True`, use list directly | Critical |
 | 7 | `setup_all.py` | Direct `pip.exe` call fails when pip module missing | Changed to `python -m pip` with ensurepip fallback | Medium |
+| 8 | All 4 tools | `base_dir = Path(__file__).parent.parent` resolves to wrong directory | Changed to `Path(__file__).parent` | Critical |
+| 9 | `performance_benchmark.py` | `--check-regressions` default=10.0 always truthy, fires on every run | Changed default to `None`, guard with `is not None` | Critical |
+| 10 | `dependency_health.py` | `_parse_requirements` includes upper bound in version string (e.g., `2.0.3,<3.0.0`) | Added `.split(',')[0].strip()` to extract lower bound only | Critical |
+| 11 | `smart_test_selector.py` | `tests_dir` used without existence check in `generate_test_matrix` else branch | Added `tests_dir.exists()` guard before `rglob` | Medium |
+| 12 | `performance_benchmark.py` | `tracemalloc.start()` called every decorated function call, resetting tracking | Added `tracemalloc.is_tracing()` guard; only start/stop if we own it | Medium |
+| 13 | `pipeline_dashboard.py` | `INSERT OR REPLACE` on parent row but plain `INSERT` on children creates orphaned rows | Delete child rows before inserting new ones in `record_run()` | Medium |
+| 14 | `dependency_health.py` | PyUp API returns 403 without auth, silently fails | Wrap in try/except, handle 403 with debug log | Medium |
+| 15 | `dependency_health.py` | Bare `except: pass` swallows all errors including `KeyboardInterrupt` | Changed to `except (requests.RequestException, ValueError, KeyError)` with logging | Low |
+| 16 | All 4 tools | All output via `print()`, no configurable verbosity | Migrated to `logging` module with `basicConfig` in each `main()` | Low |
+| 17 | `dependency_health.py` | pypistats.org API called for every package with no caching (28 HTTP calls/run) | Added `pypistats_cache.json` with 24h TTL | Low |
+| 18 | `dependency_health.py`, `performance_benchmark.py` | User-controlled data interpolated directly into HTML without escaping | Added `html_module.escape()` on all user strings in reports | Low |
+| 19 | `dependency_health.py` | `_save_caches()` never called, caches not persisted across runs | Added `checker._save_caches()` after `check_all_packages()` | Low |
+| 20 | `dependency_health.py` | `package[extra]>=1.0` syntax not handled in requirements parsing | Added `_strip_extras()` static method to split name from extras | Low |
+| 21 | `test_precheck.py` | `test_requirements_exists` and `test_pipeline_yml_exists` fail when CWD != project dir | Use `os.path.join(BASE_DIR, ...)` for path resolution | Low |
 
 ### Root Cause of Bug #1
 Old venv was created with Python 3.10 but system has Python 3.14. The pinned versions (`pandas==2.0.3`, `numpy==1.24.3`) use C extensions that fail to compile on Python 3.14 because `pkg_resources` was removed.
 
 ### Root Cause of Bug #3
 SQLite treats `date` as a function name. When a column alias is named `date`, `GROUP BY date` calls the `date()` function instead of grouping by the column.
+
+### Root Cause of Bug #8
+All 4 tools used `Path(__file__).parent.parent` to get the project root, but the scripts live in `BitBucket/` (the actual root), so `parent.parent` resolved to `QA Scripts/` — one level too high. This broke all file path lookups (cache dirs, requirements, DB, dashboard).
+
+### Root Cause of Bug #10
+`line.split('>=', 1)` produces `['pandas', '2.0.3,<3.0.0']`. The `.split(',')[0]` fix extracts just the lower bound `2.0.3`.
 
 ---
 
@@ -603,6 +625,7 @@ This balances:
 | `dependency-reports/latest_report.html` | dependency_health | Latest health report |
 | `dependency-reports/pypi_cache.json` | dependency_health | Cached PyPI data (24h) |
 | `dependency-reports/vuln_cache.json` | dependency_health | Cached vulnerability data (6h) |
+| `dependency-reports/pypistats_cache.json` | dependency_health | Cached pypistats download data (24h) |
 | `pipeline-metrics.db` | pipeline_dashboard | SQLite database with run history |
 | `dashboard/dashboard.html` | pipeline_dashboard | Interactive Plotly dashboard |
 | `installed-packages.txt` | Pipeline | pip freeze output |
@@ -690,4 +713,5 @@ A: Pipeline success rates, test coverage trends, step durations, and branch heal
 ---
 
 *Document generated as part of the BitBucket Pipeline QA & Utility Suite.*
-*For questions, contact the team or check the README.md.*
+*Author: Sr. QA Tester - Akshaykumar Dudhwala*
+*For questions, contact the author or check the README.md.*

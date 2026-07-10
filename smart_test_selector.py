@@ -1,6 +1,8 @@
 """
 Smart Test Selector - Only run tests affected by code changes
 Phase 1 Feature: Test Impact Analysis
+
+Author: Sr. QA Tester - Akshaykumar Dudhwala
 """
 
 import os
@@ -13,10 +15,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Set
 import ast
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SmartTestSelector:
     def __init__(self):
-        self.base_dir = Path(__file__).parent.parent
+        self.base_dir = Path(__file__).parent
         self.cache_dir = self.base_dir / '.test-cache'
         self.cache_dir.mkdir(exist_ok=True)
         
@@ -52,7 +57,7 @@ class SmartTestSelector:
                     files.extend([f for f in result.stdout.split('\n') if f])
                 return files
         except Exception as e:
-            print(f"[WARN] Error getting changed files: {e}")
+            logger.warning("Error getting changed files: %s", e)
         return []
     
     def _build_test_mapping(self) -> Dict[str, List[str]]:
@@ -96,7 +101,7 @@ class SmartTestSelector:
                                 if str(test_file.relative_to(self.base_dir)) not in mapping[source_file]:
                                     mapping[source_file].append(str(test_file.relative_to(self.base_dir)))
             except Exception as e:
-                print(f"[WARN] Error parsing {test_file}: {e}")
+                logger.warning("Error parsing %s: %s", test_file, e)
         
         return mapping
     
@@ -162,8 +167,9 @@ class SmartTestSelector:
                 return {"tests": smoke_tests, "reason": "Running smoke tests only", "timestamp": datetime.now().isoformat()}
             else:
                 all_tests = []
-                for test_file in tests_dir.rglob('test_*.py'):
-                    all_tests.append(str(test_file.relative_to(self.base_dir)))
+                if tests_dir.exists():
+                    for test_file in tests_dir.rglob('test_*.py'):
+                        all_tests.append(str(test_file.relative_to(self.base_dir)))
                 return {"tests": all_tests, "reason": "No affected tests identified, running all", "timestamp": datetime.now().isoformat()}
         
         if not self.should_run_tests(affected_tests):
@@ -185,20 +191,20 @@ class SmartTestSelector:
     
     def print_summary(self):
         """Print summary of analysis"""
-        print("\n" + "="*60)
-        print("SMART TEST SELECTOR - SUMMARY")
-        print("="*60)
-        print(f"\nChanged Files ({len(self.changed_files)}):")
+        logger.info("\n" + "="*60)
+        logger.info("SMART TEST SELECTOR - SUMMARY")
+        logger.info("="*60)
+        logger.info("Changed Files (%d):", len(self.changed_files))
         for file in self.changed_files[:10]:
-            print(f"   • {file}")
-        print(f"\nTest Mapping ({len(self.test_mapping)} source files mapped):")
+            logger.info("   • %s", file)
+        logger.info("Test Mapping (%d source files mapped):", len(self.test_mapping))
         for source, tests in list(self.test_mapping.items())[:5]:
-            print(f"   • {source} -> {len(tests)} tests")
+            logger.info("   • %s -> %d tests", source, len(tests))
         affected = self.get_affected_tests()
-        print(f"\nAffected Tests: {len(affected)}")
+        logger.info("Affected Tests: %d", len(affected))
         for test in list(affected)[:10]:
-            print(f"   • {test}")
-        print("\n" + "="*60)
+            logger.info("   • %s", test)
+        logger.info("\n" + "="*60)
 
 def main():
     parser = argparse.ArgumentParser(description="Smart Test Selector")
@@ -206,6 +212,7 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Print analysis summary")
     parser.add_argument("--output", "-o", default="test-matrix.json", help="Output file for test matrix")
     
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     args = parser.parse_args()
     selector = SmartTestSelector()
     
@@ -216,9 +223,9 @@ def main():
         matrix = selector.generate_test_matrix()
         with open(args.output, 'w', encoding='utf-8') as f:
             json.dump(matrix, f, indent=2)
-        print(f"Test matrix saved to {args.output}")
+        logger.info("Test matrix saved to %s", args.output)
         if not matrix['tests']:
-            print("No tests need to run at this time")
+            logger.info("No tests need to run at this time")
             sys.exit(0)
 
 if __name__ == "__main__":

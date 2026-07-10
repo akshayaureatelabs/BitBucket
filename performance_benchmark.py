@@ -1,6 +1,8 @@
-﻿"""
+"""
 Performance Benchmarking - Track code performance over time
 Phase 1 Feature: Performance Monitoring
+
+Author: Sr. QA Tester - Akshaykumar Dudhwala
 """
 
 import os
@@ -14,10 +16,14 @@ from functools import wraps
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
+import logging
+import html as html_module
+
+logger = logging.getLogger(__name__)
 
 class PerformanceBenchmark:
     def __init__(self):
-        self.base_dir = Path(__file__).parent.parent
+        self.base_dir = Path(__file__).parent
         self.benchmark_dir = self.base_dir / '.benchmarks'
         self.benchmark_dir.mkdir(exist_ok=True)
         
@@ -30,7 +36,9 @@ class PerformanceBenchmark:
         def decorator(func):
             @wraps(func)
             def wrapper(*args, **kwargs):
-                tracemalloc.start()
+                tracemalloc_running = tracemalloc.is_tracing()
+                if not tracemalloc_running:
+                    tracemalloc.start()
                 process = psutil.Process()
                 
                 mem_before = process.memory_info().rss / 1024 / 1024
@@ -54,7 +62,8 @@ class PerformanceBenchmark:
                     cpu_after = process.cpu_percent(interval=None)
                     
                     current, peak = tracemalloc.get_traced_memory()
-                    tracemalloc.stop()
+                    if not tracemalloc_running:
+                        tracemalloc.stop()
                     
                     benchmark_data = {
                         "name": name or func.__name__,
@@ -215,18 +224,18 @@ class PerformanceBenchmark:
         
         slowest_rows = ""
         for func in summary['slowest_functions']:
-            slowest_rows += f"<tr><td>{func['function']}</td><td>{func['avg_time']:.3f}</td></tr>"
+            slowest_rows += f"<tr><td>{html_module.escape(func['function'])}</td><td>{func['avg_time']:.3f}</td></tr>"
         
         memory_rows = ""
         for func in summary['memory_hungry']:
-            memory_rows += f"<tr><td>{func['function']}</td><td>{func.get('avg_memory_mb', 0):.2f}</td></tr>"
+            memory_rows += f"<tr><td>{html_module.escape(func['function'])}</td><td>{func.get('avg_memory_mb', 0):.2f}</td></tr>"
         
         regression_rows = ""
         if comparison.get('regressions'):
             for reg in comparison['regressions']:
                 regression_rows += f"""
                 <tr class="bad">
-                    <td>{reg['function']}</td>
+                    <td>{html_module.escape(reg['function'])}</td>
                     <td>{reg['diff_percent']:.1f}%</td>
                     <td>{reg['current']:.3f}</td>
                     <td>{reg['baseline']:.3f}</td>
@@ -237,7 +246,7 @@ class PerformanceBenchmark:
             for imp in comparison['improvements']:
                 improvement_rows += f"""
                 <tr class="good">
-                    <td>{imp['function']}</td>
+                    <td>{html_module.escape(imp['function'])}</td>
                     <td>{imp['diff_percent']:.1f}%</td>
                     <td>{imp['current']:.3f}</td>
                     <td>{imp['baseline']:.3f}</td>
@@ -303,7 +312,7 @@ class PerformanceBenchmark:
         if comparison.get('regressions'):
             for reg in comparison['regressions']:
                 if reg['diff_percent'] > threshold:
-                    print(f"[FAIL] Regression in {reg['function']}: {reg['diff_percent']:.1f}% slower")
+                    logger.error("Regression in %s: %.1f%% slower", reg['function'], reg['diff_percent'])
                     return True
         return False
 
@@ -313,8 +322,9 @@ def main():
     parser.add_argument("--compare-baseline", action="store_true", help="Compare with baseline")
     parser.add_argument("--save-baseline", action="store_true", help="Save current as baseline")
     parser.add_argument("--generate-report", action="store_true", help="Generate HTML report")
-    parser.add_argument("--check-regressions", type=float, default=10.0, help="Check for regressions (threshold percent)")
+    parser.add_argument("--check-regressions", type=float, default=None, help="Check for regressions (threshold percent)")
     
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     args = parser.parse_args()
     benchmark = PerformanceBenchmark()
     
@@ -324,33 +334,33 @@ def main():
         return "done"
     
     if args.run_benchmarks:
-        print("Running benchmarks...")
+        logger.info("Running benchmarks...")
         for i in range(5):
             example_function()
-        print("Benchmarks complete")
+        logger.info("Benchmarks complete")
     
     if args.compare_baseline:
-        print("\nComparing with baseline...")
+        logger.info("Comparing with baseline...")
         comparison = benchmark.compare_with_baseline()
         if comparison.get('comparisons'):
             for func, data in comparison['comparisons'].items():
-                icon = "[OK]" if data['status'] == 'improvement' else "[WARN]" if data['status'] == 'regression' else "[INFO]"
-                print(f"{icon} {func}: {data['diff_percent']:+.1f}% ({data['current_avg']:.3f}s vs {data['baseline_avg']:.3f}s)")
+                level = logging.INFO if data['status'] == 'stable' else logging.WARNING if data['status'] == 'regression' else logging.INFO
+                logger.log(level, "%s: %+.1f%% (%.3fs vs %.3fs)", func, data['diff_percent'], data['current_avg'], data['baseline_avg'])
     
     if args.save_baseline:
         benchmark.save_baseline()
-        print("Baseline saved")
+        logger.info("Baseline saved")
     
     if args.generate_report:
         report = benchmark.generate_html_report()
-        print(f"Report generated: {report}")
+        logger.info("Report generated: %s", report)
     
-    if args.check_regressions:
+    if args.check_regressions is not None:
         if benchmark.check_regressions(args.check_regressions):
-            print(f"[FAIL] Regressions exceed {args.check_regressions}% threshold")
+            logger.error("Regressions exceed %.1f%% threshold", args.check_regressions)
             sys.exit(1)
         else:
-            print(f"[OK] No regressions above {args.check_regressions}% threshold")
+            logger.info("No regressions above %.1f%% threshold", args.check_regressions)
 
 if __name__ == "__main__":
     main()

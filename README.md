@@ -37,7 +37,7 @@ chmod +x setup.sh
 The setup script will:
 1. Create a virtual environment (`venv/`)
 2. Install all dependencies from `requirements.txt`
-3. Run validation tests (7 tests)
+3. Run validation tests (21 tests)
 4. Verify all 4 tools import correctly
 
 ### Manual Setup
@@ -96,7 +96,7 @@ python performance_benchmark.py --run-benchmarks --save-baseline
 # Compare current results against saved baseline
 python performance_benchmark.py --compare-baseline
 
-# Check for regressions (default threshold: 10%)
+# Check for regressions (must specify threshold)
 python performance_benchmark.py --check-regressions 15.0
 ```
 
@@ -106,7 +106,7 @@ python performance_benchmark.py --check-regressions 15.0
 | `--compare-baseline` | Compare current results with saved baseline |
 | `--save-baseline` | Save current results as the new baseline |
 | `--generate-report` | Generate HTML report at `.benchmarks/performance-report.html` |
-| `--check-regressions` | Check if any function regressed beyond threshold (%) |
+| `--check-regressions` | Check if any function regressed beyond threshold (%) — **required**, no default |
 
 **Output:** `.benchmarks/current.json`, `.benchmarks/performance-report.html`, `.benchmarks/baseline.json`
 
@@ -187,10 +187,13 @@ pytest tests/ -n auto
 |------|-------------|
 | `test_python_syntax` | Validates Python syntax of all `.py` files |
 | `test_no_empty_python_files` | Ensures no empty Python files exist |
-| `test_requirements_exists` | Checks `requirements.txt` exists |
-| `test_pipeline_yml_exists` | Checks `bitbucket-pipelines.yml` exists |
+| `test_requirements_exists` | Checks `requirements.txt` exists (CWD-independent) |
+| `test_pipeline_yml_exists` | Checks `bitbucket-pipelines.yml` exists (CWD-independent) |
 | `test_sample` | Sample test placeholder |
 | `test_imports` | Validates key imports work |
+| `TestStripExtras` | 6 tests for extras parsing (`package[extra]>=1.0`) |
+| `TestPypistatsCaching` | 4 tests for pypistats API cache hit/miss/stale |
+| `TestTracemallocGuard` | 3 tests for tracemalloc auto start/stop guard |
 
 ---
 
@@ -265,7 +268,7 @@ Stage 6              ── Pipeline Dashboard
 | `radon-report.json` | Complexity Check |
 | `vulture-report.txt` | Complexity Check |
 | `.benchmarks/**` | Performance Benchmark |
-| `dependency-reports/**` | Dependency Health |
+| `dependency-reports/**` | Dependency Health (includes `pypistats_cache.json`) |
 | `pipeline-metrics.db` | Pipeline Dashboard |
 | `dashboard/**` | Pipeline Dashboard |
 | `coverage.xml`, `htmlcov/**` | Tests & Coverage |
@@ -278,11 +281,13 @@ Stage 6              ── Pipeline Dashboard
 BitBucket/
 ├── bitbucket-pipelines.yml    # CI/CD pipeline configuration
 ├── requirements.txt           # Python dependencies (with version bounds)
+├── setup_all.py               # Cross-platform setup script
 ├── setup.bat                  # One-click setup (Windows)
 ├── setup.sh                   # One-click setup (Linux/macOS)
 ├── test_precheck.py           # Pre-merge validation tests
 ├── tests/
-│   └── test_sample.py         # Sample test suite
+│   ├── test_sample.py         # Sample test suite
+│   └── test_fixes.py          # Unit tests for v1.1.0 fixes
 ├── smart_test_selector.py     # Test impact analysis tool
 ├── performance_benchmark.py   # Performance tracking utility
 ├── dependency_health.py       # Dependency health checker
@@ -292,6 +297,7 @@ BitBucket/
 ├── test_phase1.bat            # Phase 1 test runner (Windows)
 ├── test_phase1.sh             # Phase 1 test runner (Linux)
 ├── test-matrix.json           # Generated test matrix
+├── CHANGELOG.md               # Version history
 ├── README.md                  # This file
 ├── .gitignore                 # Git ignore rules
 └── venv/                      # Virtual environment (not in git)
@@ -340,6 +346,8 @@ Key dependencies: pytest, black, flake8, mypy, bandit, pip-audit, pandas, plotly
 ---
 
 ## Contributing
+
+**Author:** Sr. QA Tester - Akshaykumar Dudhwala
 
 1. Create a feature branch from `main`
 2. Make your changes

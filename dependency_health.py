@@ -1,6 +1,8 @@
-﻿"""
+"""
 Dependency Health Check - Monitor package health and vulnerabilities
 Phase 1 Feature: Dependency Analysis
+
+Author: Sr. QA Tester - Akshaykumar Dudhwala
 """
 
 import os
@@ -8,22 +10,27 @@ import sys
 import json
 import requests
 import argparse
+import html as html_module
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import concurrent.futures
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DependencyHealthCheck:
     def __init__(self):
-        self.base_dir = Path(__file__).parent.parent
+        self.base_dir = Path(__file__).parent
         self.report_dir = self.base_dir / 'dependency-reports'
         self.report_dir.mkdir(exist_ok=True)
         
-        self.requirements_file = self.base_dir / 'BitBucket' / 'requirements.txt'
+        self.requirements_file = self.base_dir / 'requirements.txt'
         self.packages = self._parse_requirements()
         
         self.pypi_cache = self.report_dir / 'pypi_cache.json'
         self.vuln_cache = self.report_dir / 'vuln_cache.json'
+        self.pypistats_cache = self.report_dir / 'pypistats_cache.json'
         self._load_caches()
     
     def _load_caches(self):
@@ -38,6 +45,11 @@ class DependencyHealthCheck:
         if self.vuln_cache.exists():
             with open(self.vuln_cache, 'r', encoding='utf-8') as f:
                 self.vuln_data = json.load(f)
+        
+        self.pypistats_data = {}
+        if self.pypistats_cache.exists():
+            with open(self.pypistats_cache, 'r', encoding='utf-8') as f:
+                self.pypistats_data = json.load(f)
     
     def _save_caches(self):
         """Save cached data"""
@@ -46,13 +58,32 @@ class DependencyHealthCheck:
         
         with open(self.vuln_cache, 'w', encoding='utf-8') as f:
             json.dump(self.vuln_data, f, indent=2)
+        
+        with open(self.pypistats_cache, 'w', encoding='utf-8') as f:
+            json.dump(self.pypistats_data, f, indent=2)
+    
+    @staticmethod
+    def _strip_extras(name: str) -> tuple:
+        """Strip extras from package name, returning (name, extras).
+        
+        Examples:
+            'pytest-cov[testing]' -> ('pytest-cov', 'testing')
+            'requests[security,socks]' -> ('requests', 'security,socks')
+            'pandas' -> ('pandas', None)
+        """
+        if '[' in name:
+            bracket_pos = name.index('[')
+            base_name = name[:bracket_pos]
+            extras = name[bracket_pos + 1:].rstrip(']')
+            return base_name, extras
+        return name, None
     
     def _parse_requirements(self) -> List[Dict[str, str]]:
         """Parse requirements.txt file"""
         packages = []
         
         if not self.requirements_file.exists():
-            print(f"[WARN] Requirements file not found: {self.requirements_file}")
+            logger.warning("Requirements file not found: %s", self.requirements_file)
             return packages
         
         with open(self.requirements_file, 'r', encoding='utf-8') as f:
@@ -62,33 +93,24 @@ class DependencyHealthCheck:
                 if not line or line.startswith('#'):
                     continue
                 
-                if '==' in line:
-                    name, version = line.split('==', 1)
-                    packages.append({
-                        'name': name.strip(),
-                        'version': version.strip(),
-                        'specifier': '=='
-                    })
-                elif '>=' in line:
-                    name, version = line.split('>=', 1)
-                    packages.append({
-                        'name': name.strip(),
-                        'version': version.strip(),
-                        'specifier': '>='
-                    })
-                elif '<=' in line:
-                    name, version = line.split('<=', 1)
-                    packages.append({
-                        'name': name.strip(),
-                        'version': version.strip(),
-                        'specifier': '<='
-                    })
-                else:
-                    packages.append({
-                        'name': line.strip(),
-                        'version': None,
-                        'specifier': None
-                    })
+                name = line
+                version = None
+                specifier = None
+                
+                for op in ('==', '>=', '<='):
+                    if op in line:
+                        name, version = line.split(op, 1)
+                        version = version.strip().split(',')[0].strip()
+                        specifier = op
+                        break
+                
+                base_name, extras = self._strip_extras(name.strip())
+                packages.append({
+                    'name': base_name,
+                    'extras': extras,
+                    'version': version,
+                    'specifier': specifier
+                })
         
         return packages
     
@@ -118,7 +140,7 @@ class DependencyHealthCheck:
                 return data
             
         except Exception as e:
-            print(f"[WARN] Error fetching {package_name}: {e}")
+            logger.warning("Error fetching %s: %s", package_name, e)
         
         return {}
     
@@ -158,21 +180,28 @@ class DependencyHealthCheck:
                     vulnerabilities.extend(data['vulns'])
             
             if version:
-                response = requests.get(
-                    f"https://pyup.io/api/v1/vulnerabilities/{package_name}/",
-                    timeout=10
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for vuln in data:
-                        if vuln.get('affected_versions'):
-                            vulnerabilities.append({
-                                'id': vuln.get('cve', ''),
-                                'summary': vuln.get('advisory', ''),
-                                'severity': vuln.get('severity', 'unknown'),
-                                'source': 'pyup'
-                            })
+                try:
+                    response = requests.get(
+                        f"https://pyup.io/api/v1/vulnerabilities/{package_name}/",
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        for vuln in data:
+                            if vuln.get('affected_versions'):
+                                vulnerabilities.append({
+                                    'id': vuln.get('cve', ''),
+                                    'summary': vuln.get('advisory', ''),
+                                    'severity': vuln.get('severity', 'unknown'),
+                                    'source': 'pyup'
+                                })
+                    elif response.status_code == 403:
+                        logger.debug("PyUp API requires authentication for %s, skipping", package_name)
+                    else:
+                        logger.debug("PyUp API returned %d for %s", response.status_code, package_name)
+                except requests.RequestException as e:
+                    logger.debug("PyUp API error for %s: %s", package_name, e)
             
             self.vuln_data[cache_key] = {
                 'cached_at': datetime.now().isoformat(),
@@ -180,7 +209,7 @@ class DependencyHealthCheck:
             }
             
         except Exception as e:
-            print(f"[WARN] Error checking vulnerabilities for {package_name}: {e}")
+            logger.warning("Error checking vulnerabilities for %s: %s", package_name, e)
         
         return vulnerabilities
     
@@ -216,24 +245,41 @@ class DependencyHealthCheck:
                     score -= 10
                     reasons.append(f"No release in {days_since_release} days")
         
+        pkg_name = info.get('name', '')
         try:
-            response = requests.get(
-                f"https://pypistats.org/api/packages/{info.get('name', '')}/recent",
-                timeout=5
-            )
+            cached_stats = self.pypistats_data.get(pkg_name)
+            if cached_stats:
+                cached_at = datetime.fromisoformat(cached_stats['cached_at'])
+                if datetime.now() - cached_at < timedelta(hours=24):
+                    downloads = cached_stats['downloads']
+                else:
+                    downloads = None
+            else:
+                downloads = None
             
-            if response.status_code == 200:
-                data = response.json()
-                downloads = data.get('data', {}).get('last_month', 0)
+            if downloads is None:
+                response = requests.get(
+                    f"https://pypistats.org/api/packages/{pkg_name}/recent",
+                    timeout=5
+                )
                 
+                if response.status_code == 200:
+                    data = response.json()
+                    downloads = data.get('data', {}).get('last_month', 0)
+                    self.pypistats_data[pkg_name] = {
+                        'cached_at': datetime.now().isoformat(),
+                        'downloads': downloads
+                    }
+            
+            if downloads is not None:
                 if downloads < 1000:
                     score -= 15
                     reasons.append(f"Low downloads: {downloads}/month")
                 elif downloads < 10000:
                     score -= 5
                     reasons.append(f"Moderate downloads: {downloads}/month")
-        except:
-            pass
+        except (requests.RequestException, ValueError, KeyError) as e:
+            logger.debug("Error fetching pypistats for %s: %s", pkg_name, e)
         
         if vulnerabilities:
             vuln_count = len(vulnerabilities)
@@ -312,7 +358,7 @@ class DependencyHealthCheck:
         name = package['name']
         version = package['version']
         
-        print(f"[CHECK] {name}...")
+        logger.info("Checking %s...", name)
         
         package_info = self.get_package_info(name)
         vulnerabilities = self.check_vulnerabilities(name, version)
@@ -355,17 +401,17 @@ class DependencyHealthCheck:
             
             issues = "<ul style='margin:0;padding-left:20px;'>"
             for reason in result['health_reasons'][:3]:
-                issues += f"<li>{reason}</li>"
+                issues += f"<li>{html_module.escape(reason)}</li>"
             if result['vulnerabilities'] > 0:
                 for vuln in result['vulnerability_details'][:2]:
-                    issues += f"<li class='vuln'>Vuln: {vuln.get('id', 'Unknown')}</li>"
+                    issues += f"<li class='vuln'>Vuln: {html_module.escape(vuln.get('id', 'Unknown'))}</li>"
             issues += "</ul>"
             
             html_rows += f"""
             <tr>
-                <td><strong>{result['package']}</strong></td>
-                <td>{result['current_version'] or 'N/A'}</td>
-                <td>{result.get('latest_version', 'N/A')}{update_indicator}</td>
+                <td><strong>{html_module.escape(result['package'])}</strong></td>
+                <td>{html_module.escape(result['current_version'] or 'N/A')}</td>
+                <td>{html_module.escape(result.get('latest_version', 'N/A'))}{update_indicator}</td>
                 <td class="score {score_class}">{result['health_score']:.1f}</td>
                 <td class="{'vuln' if result['vulnerabilities'] > 0 else ''}">{result['vulnerabilities']}</td>
                 <td>{issues}</td>
@@ -451,16 +497,16 @@ class DependencyHealthCheck:
         
         for result in results:
             if result['health_score'] < thresholds['min_score']:
-                print(f"[FAIL] {result['package']}: Health score {result['health_score']} below {thresholds['min_score']}")
+                logger.error("%s: Health score %s below %s", result['package'], result['health_score'], thresholds['min_score'])
                 failed = True
             
             if result['vulnerabilities'] > thresholds['max_vulnerabilities']:
-                print(f"[FAIL] {result['package']}: Too many vulnerabilities ({result['vulnerabilities']})")
+                logger.error("%s: Too many vulnerabilities (%d)", result['package'], result['vulnerabilities'])
                 failed = True
             
             critical = sum(1 for v in result['vulnerability_details'] if v.get('severity') == 'critical')
             if critical > thresholds.get('critical_vulnerabilities', 0):
-                print(f"[FAIL] {result['package']}: Found {critical} critical vulnerabilities")
+                logger.error("%s: Found %d critical vulnerabilities", result['package'], critical)
                 failed = True
         
         return failed
@@ -472,38 +518,40 @@ def main():
     parser.add_argument("--fail-on-issues", action="store_true", help="Fail if issues found")
     parser.add_argument("--output-json", type=str, help="Output results to JSON file")
     
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     args = parser.parse_args()
     checker = DependencyHealthCheck()
-    
+
     if args.check_all:
-        print("CHECKING ALL DEPENDENCIES...")
+        logger.info("CHECKING ALL DEPENDENCIES...")
         results = checker.check_all_packages()
+        checker._save_caches()
         
-        print("\n" + "="*60)
-        print("DEPENDENCY HEALTH SUMMARY")
-        print("="*60)
+        logger.info("\n" + "="*60)
+        logger.info("DEPENDENCY HEALTH SUMMARY")
+        logger.info("="*60)
         
         for result in results:
             status = "OK" if result['health_score'] >= 70 else "WARN" if result['health_score'] >= 50 else "FAIL"
             vuln = f"({result['vulnerabilities']} vulns)" if result['vulnerabilities'] > 0 else ""
             update = " [UPDATE]" if result.get('needs_update') else ""
-            print(f"{status} {result['package']}: {result['health_score']:.1f}{vuln}{update}")
+            logger.info("%s %s: %.1f%s%s", status, result['package'], result['health_score'], vuln, update)
         
         if args.generate_report:
             report = checker.generate_report(results)
-            print(f"\nReport generated: {report}")
+            logger.info("Report generated: %s", report)
         
         if args.output_json:
             with open(args.output_json, 'w', encoding='utf-8') as f:
                 json.dump(results, f, indent=2)
-            print(f"Results saved to {args.output_json}")
+            logger.info("Results saved to %s", args.output_json)
         
         if args.fail_on_issues:
             if checker.check_for_failures(results):
-                print("\n[FAIL] Dependency health check failed!")
+                logger.error("Dependency health check failed!")
                 sys.exit(1)
             else:
-                print("\n[OK] All dependencies meet thresholds")
+                logger.info("All dependencies meet thresholds")
 
 if __name__ == "__main__":
     main()

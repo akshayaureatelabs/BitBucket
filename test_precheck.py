@@ -34,8 +34,8 @@ def test_no_empty_python_files():
 
 def test_requirements_exists():
     """Ensure requirements.txt exists"""
-    assert os.path.exists('requirements.txt'), "requirements.txt not found"
+    assert os.path.exists(os.path.join(BASE_DIR, 'requirements.txt')), "requirements.txt not found"
 
 def test_pipeline_yml_exists():
     """Ensure bitbucket-pipelines.yml exists"""
-    assert os.path.exists('bitbucket-pipelines.yml'), "bitbucket-pipelines.yml not found"
+    assert os.path.exists(os.path.join(BASE_DIR, 'bitbucket-pipelines.yml')), "bitbucket-pipelines.yml not found"
