@@ -1,6 +1,71 @@
 # BitBucket Pipeline QA & Utility Suite
 
-A comprehensive collection of Python-based tools and CI/CD configurations designed to optimize, monitor, and validate BitBucket Pipelines.
+A collection of Python-based tools and configurations that validate every code change **locally** before it is pushed. The project acts as a **quality gate** — nothing is pushed unless the local checks pass. (BitBucket Pipelines CI is supported but **not required**; the local pre-push hook is the primary gate.)
+
+---
+
+## Core Design Principle: Complete Isolation
+
+**The entire QA suite lives inside the `bitbucket-qa/` folder and NEVER modifies, overwrites, or touches any existing file in the developer's project.**
+
+- All tools, tests, virtual environment, and generated artifacts stay inside `bitbucket-qa/`
+- The pre-push hook delegates to `bitbucket-qa/` — it never runs checks in the project root
+- If the developer has `node_modules`, `.gitignore`, `package.json`, `.env`, `dist/`, or any other files, the QA suite will not touch them
+- The only things outside `bitbucket-qa/` are `.git/hooks/pre-push` and `.git/hooks/pre-commit` (which Git requires there), and they simply `cd` into `bitbucket-qa/` before running anything
+
+---
+
+## Quick Reference
+
+### First Time Setup
+```bash
+git clone <repo-url>
+cd <repo-folder>
+python setup_all.py
+```
+*Run this once — it will automatically create `bitbucket-qa/` with a virtual environment, install all packages, and run the validation suite.*
+
+### Daily Workflow
+```bash
+git add -A
+git commit -m "your message"   # pre-commit hook runs automatically (syntax + scanner)
+git push                        # pre-push hook runs automatically (tests + coverage)
+```
+**Two-layer quality gate:**
+- **On commit** (`pre-commit`): Fast check — syntax validation + code scanner on staged files only. Catches mistakes early.
+- **On push** (`pre-push`): Heavy check — full code scanner + QA tests + coverage >= 30%. Final quality gate.
+- *If **checks pass** → commit/push proceeds.*
+- *If **any check fails** → commit/push is **blocked** and you must fix it first.*
+
+### If Commit Is Blocked (pre-commit)
+```bash
+# Fix the syntax errors or scanner issues, then re-add and commit
+git add -A
+git commit -m "your message"
+```
+
+### If Push Is Blocked (pre-push)
+```bash
+# First, fix the errors
+cd "bitbucket-qa"
+python -m pytest test_precheck.py -v   # syntax / structure check
+python -m pytest tests/ -v             # full test suite
+python -m pytest tests/ --cov=. --cov-report=html   # see coverage in htmlcov/
+
+# Then try pushing again
+git push
+```
+
+### Extra Commands
+```bash
+cd "bitbucket-qa"
+python dependency_health.py --check-all --generate-report    # Dependency health check
+python pipeline_dashboard.py --simulate-data                # Dashboard generate
+python performance_benchmark.py --run-benchmarks            # Performance benchmark
+python smart_test_selector.py --summary --generate-matrix   # Test impact analysis
+```
+
+---
 
 ## Overview
 
@@ -18,8 +83,9 @@ This project provides a suite of utilities to enhance the development lifecycle:
 
 ### Prerequisites
 
-- **Python 3.11+** (3.11 recommended for BitBucket Pipelines compatibility)
+- **Python 3.11+** (tested on 3.14.5; works on 3.11–3.14)
 - `pip` (comes with Python)
+- `git`
 
 ### One-Click Setup
 
@@ -34,15 +100,18 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The setup script will:
-1. Create a virtual environment (`venv/`)
-2. Install all dependencies from `requirements.txt`
-3. Run validation tests (21 tests)
-4. Verify all 4 tools import correctly
+The setup script (`setup_all.py`) will:
+1. Create the `bitbucket-qa/` directory
+2. Create a virtual environment inside it (`bitbucket-qa/venv/`)
+3. Install all dependencies from `requirements.txt`
+4. Run the validation suite
+5. Verify all 4 tools import correctly
 
 ### Manual Setup
 
 ```bash
+mkdir -p "bitbucket-qa"
+cd "bitbucket-qa"
 python -m venv venv
 
 # Windows
@@ -51,24 +120,39 @@ venv\Scripts\activate
 # Linux / macOS
 source venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r ../requirements.txt
 ```
+
+---
+
+## Local Quality Gate (Pre-Push Hook)
+
+The `.git/hooks/pre-push` hook is the **primary quality gate**. It runs on every `git push`. The hook delegates all work to `bitbucket-qa/` — it never runs checks in the project root.
+
+| Step | Check | Gate |
+|------|-------|------|
+| 1/3 | Tests (`pytest test_precheck.py tests/`) | **Blocking** |
+| 2/3 | Coverage (`--cov-fail-under=30`) | **Blocking** |
+| 3/3 | Lint & format (`black`, `isort`, `flake8`) | Advisory |
+
+- **Tests and coverage block the push.** Lint prints warnings but does **not** block.
+- The test count is **dynamic** — grows as you add `.py` files and tests.
+- **Raise `--cov-fail-under`** (currently 30%) as coverage improves.
+- For a full local run (all 9 checks), use `run_full_pipeline.bat` (Windows) / `run_full_pipeline.sh` (Linux).
 
 ---
 
 ## Tools
 
-All tools can be run from the project root after activating the virtual environment.
+All tools are run from inside `bitbucket-qa/` using the venv Python.
 
 ### 1. Smart Test Selector (`smart_test_selector.py`)
 
-Analyzes code changes (via git diff) to determine which tests are affected, then generates a test matrix for targeted CI runs.
+Analyzes code changes (via `git diff`) to determine which tests are affected, then generates a test matrix for targeted runs.
 
 ```bash
-# Generate test matrix and print summary
+cd "bitbucket-qa"
 python smart_test_selector.py --summary --generate-matrix
-
-# Custom output file
 python smart_test_selector.py --generate-matrix --output my-matrix.json
 ```
 
@@ -78,8 +162,6 @@ python smart_test_selector.py --generate-matrix --output my-matrix.json
 | `--summary` | Print analysis summary to console |
 | `-o, --output` | Output file path (default: `test-matrix.json`) |
 
-**Output:** `test-matrix.json` — Used by the pipeline to skip unaffected tests.
-
 ---
 
 ### 2. Performance Benchmark (`performance_benchmark.py`)
@@ -87,43 +169,31 @@ python smart_test_selector.py --generate-matrix --output my-matrix.json
 Tracks execution time, memory usage, and CPU consumption. Compares against a saved baseline to detect regressions.
 
 ```bash
-# Run benchmarks and generate HTML report
+cd "bitbucket-qa"
 python performance_benchmark.py --run-benchmarks --generate-report
-
-# Save current results as new baseline
 python performance_benchmark.py --run-benchmarks --save-baseline
-
-# Compare current results against saved baseline
 python performance_benchmark.py --compare-baseline
-
-# Check for regressions (must specify threshold)
 python performance_benchmark.py --check-regressions 15.0
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--run-benchmarks` | Execute benchmark suite (5 iterations of example function) |
+| `--run-benchmarks` | Execute benchmark suite |
 | `--compare-baseline` | Compare current results with saved baseline |
 | `--save-baseline` | Save current results as the new baseline |
-| `--generate-report` | Generate HTML report at `.benchmarks/performance-report.html` |
-| `--check-regressions` | Check if any function regressed beyond threshold (%) — **required**, no default |
-
-**Output:** `.benchmarks/current.json`, `.benchmarks/performance-report.html`, `.benchmarks/baseline.json`
+| `--generate-report` | Generate HTML report |
+| `--check-regressions` | Check if any function regressed beyond threshold (%) |
 
 ---
 
 ### 3. Dependency Health Check (`dependency_health.py`)
 
-Checks for outdated packages, known vulnerabilities (via pip-audit), and overall dependency health.
+Checks for outdated packages, known vulnerabilities (via OSV.dev / PyUp), and overall dependency health.
 
 ```bash
-# Full check with HTML report
+cd "bitbucket-qa"
 python dependency_health.py --check-all --generate-report
-
-# Fail if any issues found (useful in CI)
 python dependency_health.py --check-all --fail-on-issues
-
-# Export results to JSON
 python dependency_health.py --check-all --output-json report.json
 ```
 
@@ -134,8 +204,6 @@ python dependency_health.py --check-all --output-json report.json
 | `--fail-on-issues` | Exit with non-zero code if issues found |
 | `--output-json` | Export results to a JSON file |
 
-**Output:** `dependency-reports/` directory with HTML/JSON reports.
-
 ---
 
 ### 4. Pipeline Dashboard (`pipeline_dashboard.py`)
@@ -143,15 +211,10 @@ python dependency_health.py --check-all --output-json report.json
 Records pipeline run metrics to a SQLite database and generates an interactive Plotly-based HTML dashboard.
 
 ```bash
-# Record current pipeline run metrics (uses BitBucket env vars)
+cd "bitbucket-qa"
 python pipeline_dashboard.py --record-metrics
-
-# Generate dashboard for last 30 days
 python pipeline_dashboard.py --generate-dashboard --days 30
-
-# Generate sample data for testing/preview
 python pipeline_dashboard.py --simulate-data
-python pipeline_dashboard.py --generate-dashboard --days 30
 ```
 
 | Flag | Description |
@@ -161,23 +224,17 @@ python pipeline_dashboard.py --generate-dashboard --days 30
 | `--simulate-data` | Insert 100 sample pipeline runs for testing |
 | `--days` | Number of days to include (default: 30) |
 
-**Output:** `dashboard/dashboard.html` (interactive charts), `pipeline-metrics.db` (SQLite database)
-
 ---
 
 ## Testing
 
+All tests run from inside `bitbucket-qa/`:
+
 ```bash
-# Run all tests
+cd "bitbucket-qa"
+pytest test_precheck.py tests/ -v
 pytest tests/ -v
-
-# Run precheck validation (syntax, structure)
-pytest test_precheck.py -v
-
-# Run with coverage
 pytest tests/ --cov=. --cov-report=html
-
-# Run tests in parallel
 pytest tests/ -n auto
 ```
 
@@ -185,23 +242,24 @@ pytest tests/ -n auto
 
 | Test | Description |
 |------|-------------|
-| `test_python_syntax` | Validates Python syntax of all `.py` files |
+| `test_python_syntax` | **Parametrized** — one test per `.py` file (validates syntax). Count grows with the codebase. |
 | `test_no_empty_python_files` | Ensures no empty Python files exist |
-| `test_requirements_exists` | Checks `requirements.txt` exists (CWD-independent) |
-| `test_pipeline_yml_exists` | Checks `bitbucket-pipelines.yml` exists (CWD-independent) |
-| `test_sample` | Sample test placeholder |
-| `test_imports` | Validates key imports work |
-| `TestStripExtras` | 6 tests for extras parsing (`package[extra]>=1.0`) |
-| `TestPypistatsCaching` | 4 tests for pypistats API cache hit/miss/stale |
-| `TestTracemallocGuard` | 3 tests for tracemalloc auto start/stop guard |
+| `test_requirements_exists` | Checks `requirements.txt` exists |
+| `test_pipeline_yml_exists` | Checks `bitbucket-pipelines.yml` exists |
+| `TestStripExtras` | 6 tests for extras parsing |
+| `TestPypistatsCaching` | 4 tests for pypistats API cache |
+| `TestTracemallocGuard` | 3 tests for tracemalloc guard |
+| `test_pre_push_hook_delegates_to_qa_dir` | Verifies hook delegates to `bitbucket-qa/` |
+| `test_no_hardcoded_user_paths` | Ensures no hardcoded user paths in source |
+| `test_setup_all_writes_only_to_qa_dir` | Ensures setup targets only `bitbucket-qa/` |
 
 ---
 
-## Pipeline Configuration
+## Optional: BitBucket Pipelines CI
 
-The `bitbucket-pipelines.yml` defines the CI/CD pipeline with the following stages:
+`bitbucket-pipelines.yml` is provided as a **reference CI configuration**. The local pre-push hook is the primary gate.
 
-### Pipeline Stages
+### Pipeline Stages (if enabled)
 
 ```
 Stage 1 (Parallel)  ──┬── Smart Cache Setup
@@ -222,72 +280,29 @@ Stage 5 (Parallel)  ──┬── Performance Benchmark
 Stage 6              ── Pipeline Dashboard
 ```
 
-### Stage Details
+### Coverage Threshold Consistency
 
-| Stage | Tools Used | Purpose |
-|-------|-----------|---------|
-| **Smart Cache Setup** | pip | Install deps, freeze installed packages |
-| **Pre-merge Validation** | pytest | Run syntax and structure checks |
-| **Test Impact Analysis** | smart_test_selector.py | Determine which tests to run |
-| **Lint & Format** | black, isort, flake8, pylint | Code quality checks |
-| **Type Checking** | mypy | Static type analysis |
-| **Security Scan** | bandit, pip-audit | Vulnerability and security checks |
-| **Complexity & Dead Code** | radon, vulture | Code complexity and unused code detection |
-| **Tests & Coverage** | pytest, pytest-cov | Run tests with 85% minimum coverage |
-| **Performance Benchmark** | performance_benchmark.py | Track and compare performance |
-| **Dependency Health** | dependency_health.py | Check dependency status |
-| **Pipeline Dashboard** | pipeline_dashboard.py | Record metrics and generate dashboard |
-
-### Triggers
-
-| Trigger | Stages Executed |
-|---------|----------------|
-| **Pull Request** (any branch) | All 6 stages (full pipeline) |
-| **Push to `main`** | All 6 stages (full pipeline) |
-| **Push to other branches** | Stages 1, 3, 4 only (quick validation) |
-
-### Pipeline Options
-
-- **Docker:** Enabled
-- **Max timeout:** 30 minutes per step
-- **Resource size:** 2x (double CPU/memory)
-- **Python image:** `python:3.11`
-- **Caching:** pip packages + pytest cache
-
-### Artifacts Generated
-
-| Artifact | Generated By |
-|----------|-------------|
-| `installed-packages.txt` | Smart Cache Setup |
-| `test-results/precheck.xml` | Pre-merge Validation |
-| `test-matrix.json` | Test Impact Analysis |
-| `lint-report.txt` | Lint & Format |
-| `mypy-report.txt` | Type Checking |
-| `bandit-report.json` | Security Scan |
-| `pip-audit.json` | Security Scan |
-| `radon-report.json` | Complexity Check |
-| `vulture-report.txt` | Complexity Check |
-| `.benchmarks/**` | Performance Benchmark |
-| `dependency-reports/**` | Dependency Health (includes `pypistats_cache.json`) |
-| `pipeline-metrics.db` | Pipeline Dashboard |
-| `dashboard/**` | Pipeline Dashboard |
-| `coverage.xml`, `htmlcov/**` | Tests & Coverage |
+The coverage threshold is **30%** everywhere — both the local pre-push hook and the CI pipeline use the same value.
 
 ---
 
 ## Project Structure
 
 ```
-BitBucket/
-├── bitbucket-pipelines.yml    # CI/CD pipeline configuration
-├── requirements.txt           # Python dependencies (with version bounds)
-├── setup_all.py               # Cross-platform setup script
+BitBucket/                         (project root)
+├── bitbucket-pipelines.yml    # Optional CI reference config
+├── requirements.txt           # Python dependencies
+├── setup_all.py               # Creates bitbucket-qa/ with everything
 ├── setup.bat                  # One-click setup (Windows)
 ├── setup.sh                   # One-click setup (Linux/macOS)
+├── run_full_pipeline.bat      # Full QA runner (Windows)
+├── run_full_pipeline.sh       # Full QA runner (Linux)
 ├── test_precheck.py           # Pre-merge validation tests
 ├── tests/
-│   ├── test_sample.py         # Sample test suite
-│   └── test_fixes.py          # Unit tests for v1.1.0 fixes
+│   ├── test_sample.py         # Sample tests
+│   ├── test_fixes.py          # Unit tests for bug fixes
+│   ├── test_quality_gate.py   # Quality gate enforcement tests
+│   └── test_tools_units.py    # Unit tests for tool internals
 ├── smart_test_selector.py     # Test impact analysis tool
 ├── performance_benchmark.py   # Performance tracking utility
 ├── dependency_health.py       # Dependency health checker
@@ -296,50 +311,40 @@ BitBucket/
 ├── fix_encoding.sh            # Fix encoding issues (Linux)
 ├── test_phase1.bat            # Phase 1 test runner (Windows)
 ├── test_phase1.sh             # Phase 1 test runner (Linux)
-├── test-matrix.json           # Generated test matrix
-├── CHANGELOG.md               # Version history
-├── README.md                  # This file
+├── .git/hooks/pre-push        # LOCAL quality gate (delegates to bitbucket-qa/)
 ├── .gitignore                 # Git ignore rules
-└── venv/                      # Virtual environment (not in git)
+├── CHANGELOG.md               # Version history
+├── QUICKSTART.md              # Quick start guide
+├── PROJECT_OVERVIEW.md        # Full technical documentation
+├── EXECUTIVE_SUMMARY.md       # Executive summary
+└── README.md                  # This file
 ```
 
 ---
 
 ## Troubleshooting
 
-### Python Version Errors
-If you see errors about `pkg_resources` or incompatible packages:
-- Ensure you're using **Python 3.11+**
-- Recreate the venv: delete `venv/` and run `setup.bat` or `setup.sh` again
+### Push Blocked on Tests
+- Read the failure output — it names the failing test
+- Run locally: `cd "bitbucket-qa" && pytest test_precheck.py tests/ -v`
+- Fix the code, commit, then `git push` again
 
-### Encoding Issues
-If files show garbled characters between Windows and Linux:
-```bash
-# Windows
-fix_encoding.bat
-
-# Linux
-fix_encoding.sh
-```
-
-### SQLite "ambiguous column" Error
-If you see `sqlite3.OperationalError: ambiguous column: date`:
-- This was fixed in the current version
-- Ensure you're using the latest code from `main`
-
-### Pipeline Failing on Coverage
-The pipeline requires **85% minimum test coverage**. If your changes reduce coverage:
+### Push Blocked on Coverage
 - Add tests for new code
-- Check coverage locally: `pytest tests/ --cov=. --cov-report=html`
+- Check coverage locally: `cd "bitbucket-qa" && pytest tests/ --cov=. --cov-report=html`
+- Raise the bar over time by increasing `--cov-fail-under` in the hook
+
+### Hook Uses the Wrong Python
+- Run `python setup_all.py` to (re)create the venv inside `bitbucket-qa/`
+
+### Developer Files Modified by Script
+**This should never happen.** The QA suite is completely isolated inside `bitbucket-qa/`. If any script modifies files outside that directory, it is a bug — report it immediately.
 
 ---
 
 ## Dependencies
 
-All dependencies use bounded version ranges (`>=X,<Y`) for:
-- **Compatibility** — Works across Python 3.11 to 3.14
-- **Stability** — Prevents unexpected breaking changes from major version bumps
-- **Security** — Allows patch-level updates for vulnerability fixes
+All dependencies use bounded version ranges (`>=X,<Y`) for compatibility and stability.
 
 Key dependencies: pytest, black, flake8, mypy, bandit, pip-audit, pandas, plotly, GitPython, psutil.
 
@@ -350,9 +355,9 @@ Key dependencies: pytest, black, flake8, mypy, bandit, pip-audit, pandas, plotly
 **Author:** Sr. QA Tester - Akshaykumar Dudhwala
 
 1. Create a feature branch from `main`
-2. Make your changes
-3. Run locally: `pytest test_precheck.py tests/ -v`
-4. Push — the pipeline will automatically validate your changes
+2. Make your changes (inside `bitbucket-qa/` for QA tool changes)
+3. Run locally: `cd "bitbucket-qa" && pytest test_precheck.py tests/ -v`
+4. `git push` — the **local pre-push hook** automatically validates
 5. Create a pull request
 
-The pipeline will run the full validation suite on your PR automatically.
+**Important:** Never modify files outside `bitbucket-qa/` from within the QA scripts. The developer's project files must remain untouched.

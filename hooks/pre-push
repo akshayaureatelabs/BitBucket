@@ -1,0 +1,84 @@
+#!/bin/sh
+# Pre-push quality gate for bitbucket-qa.
+# Scans ACTUAL project code for real issues.
+# Blocks push only on errors. Warnings are advisory.
+REPO_ROOT=$(git rev-parse --show-toplevel)
+QA_DIR="$REPO_ROOT/bitbucket-qa"
+
+if [ ! -d "$QA_DIR" ]; then
+    echo "WARNING: bitbucket-qa/ not found - skipping QA gate (push allowed)."
+    exit 0
+fi
+
+cd "$QA_DIR" || exit 1
+
+# Detect the venv Python
+if [ -f "venv/Scripts/python.exe" ]; then
+    PYTHON="venv/Scripts/python.exe"
+elif [ -f "venv/bin/python" ]; then
+    PYTHON="venv/bin/python"
+else
+    PYTHON="python"
+    echo "WARNING: bitbucket-qa venv not found; using system python."
+fi
+
+echo ""
+echo "========================================"
+echo "  Pre-Push Quality Gate"
+echo "========================================"
+echo ""
+
+mkdir -p test-results
+
+# -------------------------------------------------------
+# STEP 1: Code Scanner (blocks on errors)
+# Scans ALL project source files for real issues
+# -------------------------------------------------------
+echo ">>> 1/4 Code Scanner (blocking)..."
+echo ""
+
+$PYTHON code_scanner.py "$REPO_ROOT"
+SCANNER_EXIT=$?
+
+if [ $SCANNER_EXIT -ne 0 ]; then
+    echo ""
+    echo "PUSH BLOCKED - Fix the errors above before pushing."
+    echo ""
+    exit 1
+fi
+echo ""
+
+# -------------------------------------------------------
+# STEP 2: QA Unit Tests (blocking)
+# -------------------------------------------------------
+echo ">>> 2/4 QA Tests (blocking)..."
+$PYTHON -m pytest test_precheck.py tests/ -v --tb=short --junitxml=test-results/precheck.xml 2>&1
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "PUSH BLOCKED - QA tests failed."
+    echo ""
+    exit 1
+fi
+echo ""
+
+# -------------------------------------------------------
+# STEP 3: Coverage >= 30% (blocking)
+# -------------------------------------------------------
+echo ">>> 3/4 Coverage >= 30% (blocking)..."
+$PYTHON -m pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-fail-under=30 --junitxml=test-results/results.xml 2>&1
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "PUSH BLOCKED - Coverage below 30%."
+    echo ""
+    exit 1
+fi
+echo ""
+
+# -------------------------------------------------------
+# STEP 4: Summary
+# -------------------------------------------------------
+echo "========================================"
+echo "  All checks passed - push allowed"
+echo "========================================"
+echo ""
+exit 0

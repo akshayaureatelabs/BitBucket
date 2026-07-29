@@ -1,0 +1,30 @@
+# BitBucket QA suite artifacts (this .gitignore lives inside bitbucket-qa/)
+# It only ignores the QA suite's own generated files. Your project is untouched.
+
+# Virtual environment
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.test-cache/
+
+# Coverage / test reports
+htmlcov/
+coverage.xml
+test-results/
+
+# Generated outputs
+dashboard/
+.benchmarks/
+dependency-reports/
+pipeline-metrics.db
+bandit-report.json
+pip-audit.json
+radon-report.json
+vulture-report.txt
+installed-packages.txt
+*.db

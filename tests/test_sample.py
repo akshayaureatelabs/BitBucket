@@ -1,14 +1,20 @@
+import importlib
+
+import pytest
+
+
 def test_sample():
     """Sample test to verify pytest works"""
     assert True
 
-def test_imports():
+
+@pytest.mark.parametrize("module", [
+    "dependency_health",
+    "performance_benchmark",
+    "pipeline_dashboard",
+    "smart_test_selector",
+])
+def test_imports(module):
     """Test that all modules can be imported"""
-    try:
-        import dependency_health
-        import performance_benchmark
-        import pipeline_dashboard
-        import smart_test_selector
-        assert True
-    except ImportError as e:
-        assert False, f"Import failed: {e}"
+    mod = importlib.import_module(module)
+    assert mod is not None, f"{module} imported but is None"

@@ -9,12 +9,12 @@ Tests cover:
 import json
 import os
 import sys
-import time
 import tempfile
+import time
 import tracemalloc
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,10 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dependency_health import DependencyHealthCheck
 from performance_benchmark import PerformanceBenchmark
 
-
 # ---------------------------------------------------------------------------
 # _strip_extras() tests
 # ---------------------------------------------------------------------------
+
 
 class TestStripExtras:
     """Tests for DependencyHealthCheck._strip_extras()"""
@@ -71,11 +71,16 @@ class TestStripExtras:
 # Pypistats caching tests
 # ---------------------------------------------------------------------------
 
+
 class TestPypistatsCaching:
     """Tests for pypistats API response caching in DependencyHealthCheck."""
 
     def _make_checker(self, tmp_path):
         """Create a DependencyHealthCheck instance with a custom report dir."""
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
         checker = DependencyHealthCheck.__new__(DependencyHealthCheck)
         checker.base_dir = Path(__file__).resolve().parent.parent
         checker.report_dir = tmp_path
@@ -87,6 +92,10 @@ class TestPypistatsCaching:
         checker.pypistats_data = {}
         checker.requirements_file = checker.base_dir / "requirements.txt"
         checker.packages = checker._parse_requirements()
+        checker.session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        checker.session.mount("https://", HTTPAdapter(max_retries=retries))
+        checker.session.mount("http://", HTTPAdapter(max_retries=retries))
         return checker
 
     def test_cache_miss_then_hit(self, tmp_path):
@@ -141,7 +150,9 @@ class TestPypistatsCaching:
         mock_response.status_code = 200
         mock_response.json.return_value = {"data": {"last_month": 7777}}
 
-        with patch("dependency_health.requests.get", return_value=mock_response) as mock_get:
+        with patch.object(
+            checker.session, "get", return_value=mock_response
+        ) as mock_get:
             health = checker.calculate_health_score(package_info, [])
 
         # API should have been called because cache was stale
@@ -172,6 +183,7 @@ class TestPypistatsCaching:
 # tracemalloc guard tests
 # ---------------------------------------------------------------------------
 
+
 class TestTracemallocGuard:
     """Tests for the tracemalloc.is_tracing() guard in PerformanceBenchmark."""
 
@@ -192,9 +204,9 @@ class TestTracemallocGuard:
             assert result == 42
 
             # tracemalloc should still be running (guard didn't stop it)
-            assert tracemalloc.is_tracing(), (
-                "tracemalloc should still be running after benchmark"
-            )
+            assert (
+                tracemalloc.is_tracing()
+            ), "tracemalloc should still be running after benchmark"
         finally:
             tracemalloc.stop()
 
@@ -215,9 +227,9 @@ class TestTracemallocGuard:
         assert result == 99
 
         # tracemalloc should have been stopped by the decorator
-        assert not tracemalloc.is_tracing(), (
-            "tracemalloc should be stopped after benchmark when we started it"
-        )
+        assert (
+            not tracemalloc.is_tracing()
+        ), "tracemalloc should be stopped after benchmark when we started it"
 
     def test_benchmark_records_results(self):
         """The decorator should record benchmark data correctly."""

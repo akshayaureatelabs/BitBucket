@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "."
+cd "$(dirname "$0")"
 echo "Starting cross-platform setup..."
 echo ""
-python3 setup_all.py "$@" 2>/dev/null || python setup_all.py "$@"
+python3 setup_all.py "$@" || python setup_all.py "$@"

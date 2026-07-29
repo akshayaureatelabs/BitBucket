@@ -1,0 +1,28 @@
+[flake8]
+max-line-length = 120
+extend-ignore =
+    # E203: whitespace before ':' (black compatibility)
+    E203,
+    # W503: line break before binary operator (black compatibility)
+    W503,
+    # E501: line too long (for setup_all.py base64 strings)
+    E501,
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    .tox,
+    .eggs,
+    *.egg-info,
+    build,
+    dist,
+    node_modules,
+    htmlcov,
+    coverage,
+    dashboard,
+    test-results,
+    dependency-reports,
+    .benchmarks,
+per-file-ignores =
+    setup_all.py: E501

@@ -1,0 +1,87 @@
+#!/bin/sh
+# Pre-commit quality gate for bitbucket-qa.
+# Fast checks on STAGED files only — catches mistakes before commit.
+# Heavy checks (tests, coverage) happen in pre-push.
+REPO_ROOT=$(git rev-parse --show-toplevel)
+QA_DIR="$REPO_ROOT/bitbucket-qa"
+
+if [ ! -d "$QA_DIR" ]; then
+    echo "WARNING: bitbucket-qa/ not found - skipping pre-commit check."
+    exit 0
+fi
+
+cd "$QA_DIR" || exit 0
+
+# Detect the venv Python
+if [ -f "venv/Scripts/python.exe" ]; then
+    PYTHON="venv/Scripts/python.exe"
+elif [ -f "venv/bin/python" ]; then
+    PYTHON="venv/bin/python"
+else
+    PYTHON="python"
+    echo "WARNING: bitbucket-qa venv not found; using system python."
+fi
+
+echo ""
+echo "========================================"
+echo "  Pre-commit Quality Gate"
+echo "========================================"
+echo ""
+
+# -------------------------------------------------------
+# STEP 1: Syntax check on staged Python files
+# -------------------------------------------------------
+echo ">>> 1/2 Syntax check (staged .py files)..."
+
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+
+if [ -z "$STAGED_PY" ]; then
+    echo "  No staged Python files - skipping syntax check."
+else
+    ERRORS=0
+    for f in $STAGED_PY; do
+        FULL="$REPO_ROOT/$f"
+        if [ -f "$FULL" ]; then
+            $PYTHON -c "import ast; ast.parse(open(r'$FULL', encoding='utf-8').read())" 2>/dev/null
+            if [ $? -ne 0 ]; then
+                echo "  SYNTAX ERROR: $f"
+                ERRORS=1
+            fi
+        fi
+    done
+
+    if [ $ERRORS -ne 0 ]; then
+        echo ""
+        echo "COMMIT BLOCKED - Fix syntax errors above before committing."
+        echo ""
+        exit 1
+    fi
+    echo "  All staged files pass syntax check."
+fi
+echo ""
+
+# -------------------------------------------------------
+# STEP 2: Code scanner on staged files
+# -------------------------------------------------------
+echo ">>> 2/2 Code scanner (staged files)..."
+
+if [ -z "$STAGED_PY" ]; then
+    echo "  No staged Python files - skipping scanner."
+else
+    $PYTHON code_scanner.py "$REPO_ROOT"
+    SCANNER_EXIT=$?
+
+    if [ $SCANNER_EXIT -ne 0 ]; then
+        echo ""
+        echo "COMMIT BLOCKED - Fix scanner errors above before committing."
+        echo ""
+        exit 1
+    fi
+fi
+echo ""
+
+echo "========================================"
+echo "  Pre-commit checks passed"
+echo "========================================"
+echo ""
+exit 0

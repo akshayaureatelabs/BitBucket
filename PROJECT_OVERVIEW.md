@@ -1,7 +1,7 @@
 # BitBucket Pipeline QA & Utility Suite — Complete Project Overview
 
-> **Version:** 1.1.0  
-> **Last Updated:** June 29, 2026  
+> **Version:** 1.3.0  
+> **Last Updated:** July 15, 2026  
 > **Status:** Ready for Deployment  
 > **Python:** 3.11+ (tested on 3.14.5)  
 > **Platform:** Windows, Linux, macOS
@@ -11,14 +11,14 @@
 ## Table of Contents
 
 1. [What Is This Project?](#1-what-is-this-project)
-2. [Why Does It Exist?](#2-why-does-it-exist)
-3. [Architecture Overview](#3-architecture-overview)
-4. [Project Structure](#4-project-structure)
-5. [How to Set Up (Developer Guide)](#5-how-to-set-up)
-6. [Tools Deep Dive](#6-tools-deep-dive)
-7. [CI/CD Pipeline Explained](#7-cicd-pipeline-explained)
-8. [How the Pipeline Works (Stage by Stage)](#8-how-the-pipeline-works)
-9. [Data Flow Diagram](#9-data-flow-diagram)
+2. [Core Design Principle: Complete Isolation](#2-core-design-principle-complete-isolation)
+3. [Why Does It Exist?](#3-why-does-it-exist)
+4. [Architecture Overview](#4-architecture-overview)
+5. [Project Structure](#5-project-structure)
+6. [How to Set Up](#6-how-to-set-up)
+7. [Tools Deep Dive](#7-tools-deep-dive)
+8. [CI/CD Pipeline Explained](#8-cicd-pipeline-explained)
+9. [How the Pipeline Works](#9-how-the-pipeline-works)
 10. [Testing Strategy](#10-testing-strategy)
 11. [Bugs Found & Fixed](#11-bugs-found--fixed)
 12. [Dependencies & Versioning](#12-dependencies--versioning)
@@ -32,9 +32,9 @@
 
 This is a **Python-based QA automation and CI/CD utility suite** for BitBucket Pipelines. It provides tools that:
 
-- **Automatically select** which tests to run based on code changes (saves CI time)
-- **Track performance** of code over time (detect regressions early)
-- **Monitor dependency health** (find outdated or vulnerable packages)
+- **Automatically select** which tests to run based on code changes
+- **Track performance** of code over time
+- **Monitor dependency health** (outdated or vulnerable packages)
 - **Visualize pipeline metrics** in an interactive dashboard
 - **Enforce code quality** via linting, type checking, and security scanning
 
@@ -42,24 +42,79 @@ Think of it as a **quality gate** — every code change passes through multiple 
 
 ---
 
-## 2. Why Does It Exist?
+## 2. Core Design Principle: Complete Isolation
 
-Without this suite, a typical BitBucket Pipeline:
-- Runs **all tests** every time (slow, wasteful)
-- Has **no performance tracking** (regressions go unnoticed)
-- Has **no dependency monitoring** (vulnerable packages stay forever)
-- Has **no visual dashboard** (pipeline health is invisible)
+**The entire QA suite lives inside the `bitbucket-qa/` folder and NEVER modifies, overwrites, or touches any existing file in the developer's project.**
 
-**With this suite:**
-- Only **affected tests** run (faster pipelines)
-- Performance is **tracked and compared** against baselines
-- Dependencies are **automatically checked** for vulnerabilities
-- A **visual dashboard** shows pipeline health at a glance
-- Code quality is **automatically enforced** on every PR
+### How Isolation Works
+
+```
+Developer's Project Root/
+├── node_modules/          ← QA suite NEVER touches this
+├── package.json           ← QA suite NEVER touches this
+├── .gitignore             ← QA suite NEVER touches this
+├── .env                   ← QA suite NEVER touches this
+├── dist/                  ← QA suite NEVER touches this
+├── src/                   ← QA suite NEVER touches this
+├── .git/hooks/pre-push    ← Heavy gate outside QA dir (Git requires it here)
+├── .git/hooks/pre-commit  ← Fast gate outside QA dir (Git requires it here)
+│   └── both delegate to → bitbucket-qa/
+├── bitbucket-qa/          ← ALL QA code, tools, tests, venv, artifacts
+│   ├── venv/              ← Virtual environment
+│   ├── tests/             ← All test files
+│   ├── dependency-reports/
+│   ├── dashboard/
+│   ├── .benchmarks/
+│   └── ... (all QA files)
+└── setup_all.py           ← Creates bitbucket-qa/ with everything
+```
+
+### Isolation Enforcement
+
+Five automated tests in `tests/test_quality_gate.py` verify isolation (pre-commit + pre-push):
+
+1. **`test_pre_push_hook_delegates_to_qa_dir()`** — Verifies the pre-push hook `cd`s into `bitbucket-qa/` before running checks
+2. **`test_no_hardcoded_user_paths()`** — Ensures no source file contains hardcoded user paths like `C:\Users\...`
+3. **`test_setup_all_writes_only_to_qa_dir()`** — Verifies setup targets only `bitbucket-qa/`
+
+### What the Pre-Push Hook Does
+
+```bash
+# 1. Find the QA directory
+QA_DIR="$REPO_ROOT/bitbucket-qa"
+
+# 2. If it doesn't exist, skip (push allowed)
+if [ ! -d "$QA_DIR" ]; then exit 0; fi
+
+# 3. cd into QA directory — NEVER runs in project root
+cd "$QA_DIR"
+
+# 4. Run all checks from inside bitbucket-qa/
+$PYTHON -m pytest test_precheck.py tests/ ...
+```
 
 ---
 
-## 3. Architecture Overview
+## 3. Why Does It Exist?
+
+Without this suite:
+- Runs **all tests** every time (slow)
+- Has **no performance tracking** (regressions unnoticed)
+- Has **no dependency monitoring** (vulnerable packages stay)
+- Has **no visual dashboard** (pipeline health invisible)
+- Scripts may **modify project files** (risk of breaking developer code)
+
+**With this suite:**
+- Only **affected tests** run (faster)
+- Performance is **tracked and compared** against baselines
+- Dependencies are **automatically checked** for vulnerabilities
+- A **visual dashboard** shows pipeline health
+- Code quality is **automatically enforced**
+- **Zero risk** to developer's project files
+
+---
+
+## 4. Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -74,8 +129,8 @@ Without this suite, a typical BitBucket Pipeline:
 │  │  check   │   │  Check   │   │  Scan    │   │ Health   │ │
 │  └──────────┘   └──────────┘   └──────────┘   └──────────┘ │
 │  ┌──────────┐   ┌──────────┐                                │
-│  │  Test    │   │ Complexity│                                │
-│  │ Impact   │   │  Check    │                                │
+│  │  Test    │   │Complexity│                                │
+│  │ Impact   │   │  Check   │                                │
 │  └──────────┘   └──────────┘                                │
 │                        │                                      │
 │                        ▼                                      │
@@ -86,45 +141,55 @@ Without this suite, a typical BitBucket Pipeline:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key principle:** Everything runs inside the BitBucket Pipeline. Developers just push code — the pipeline handles quality checks automatically.
+**Key principle:** Everything runs inside `bitbucket-qa/`. Developers just push code — the pipeline handles quality checks automatically.
 
 ---
 
-## 4. Project Structure
+## 5. Project Structure
 
 ```
-BitBucket/
+BitBucket/                              (project root)
 │
-├── bitbucket-pipelines.yml     # CI/CD pipeline configuration (11 steps)
-├── requirements.txt            # 28 Python packages with version bounds (>=X,<Y)
+├── bitbucket-pipelines.yml         # CI/CD pipeline config (reference)
+├── requirements.txt                # 28 Python packages with version bounds
 │
-├── setup_all.py                # Cross-platform setup script (Win/Linux/Mac)
-├── setup.bat                   # Windows wrapper (calls setup_all.py)
-├── setup.sh                    # Linux/macOS wrapper (calls setup_all.py)
+├── setup_all.py                    # Creates bitbucket-qa/ with everything
+├── setup.bat                       # Windows one-click setup
+├── setup.sh                        # Linux/macOS one-click setup
 │
-├── smart_test_selector.py      # Test impact analysis tool
-├── performance_benchmark.py    # Performance tracking & regression detection
-├── dependency_health.py        # Dependency vulnerability & health checking
-├── pipeline_dashboard.py       # Interactive pipeline metrics dashboard
+├── smart_test_selector.py          # Test impact analysis tool
+├── performance_benchmark.py        # Performance tracking & regression detection
+├── dependency_health.py            # Dependency vulnerability & health checking
+├── pipeline_dashboard.py           # Interactive pipeline metrics dashboard
 │
-├── test_precheck.py            # Pre-merge validation tests (4 test cases)
+├── test_precheck.py                # Pre-merge validation tests
 ├── tests/
-│   ├── test_sample.py          # Sample test suite (2 test cases)
-│   └── test_fixes.py           # Unit tests for v1.1.0 fixes (13 test cases)
+│   ├── test_sample.py              # Sample test suite
+│   ├── test_fixes.py               # Unit tests for bug fixes
+│   ├── test_quality_gate.py        # Quality gate + isolation enforcement tests
+│   └── test_tools_units.py         # Unit tests for tool internals
 │
-├── fix_encoding.bat            # Fix encoding issues (Windows)
-├── fix_encoding.sh             # Fix encoding issues (Linux/macOS)
-├── test_phase1.bat             # Quick test runner (Windows)
-├── test_phase1.sh              # Quick test runner (Linux/macOS)
+├── run_full_pipeline.bat           # Full QA runner (Windows)
+├── run_full_pipeline.sh            # Full QA runner (Linux/macOS)
+├── test_phase1.bat                 # Phase 1 test runner (Windows)
+├── test_phase1.sh                  # Phase 1 test runner (Linux/macOS)
+├── fix_encoding.bat                # Fix encoding issues (Windows)
+├── fix_encoding.sh                 # Fix encoding issues (Linux/macOS)
 │
-├── README.md                   # Team documentation
-├── .gitignore                  # Git ignore rules
-└── venv/                       # Virtual environment (not in git)
+├── .git/hooks/pre-push             # Heavy gate: tests + coverage (delegates to bitbucket-qa/)
+├── .git/hooks/pre-commit           # Fast gate: syntax + scanner (delegates to bitbucket-qa/)
+├── .gitignore                      # Git ignore rules
+│
+├── README.md                       # Quick start guide and tool reference
+├── QUICKSTART.md                   # Quick start for new developers
+├── CHANGELOG.md                    # Version history
+├── PROJECT_OVERVIEW.md             # This document
+└── EXECUTIVE_SUMMARY.md            # Executive summary
 ```
 
 ---
 
-## 5. How to Set Up
+## 6. How to Set Up
 
 ### Option A: One-Click Setup (Recommended)
 
@@ -139,358 +204,163 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-**What it does automatically:**
-1. Checks Python version (needs 3.11+)
-2. Creates virtual environment (`venv/`)
+**What it does:**
+1. Creates `bitbucket-qa/` directory
+2. Creates virtual environment inside `bitbucket-qa/venv/`
 3. Installs all 28 dependencies
-4. Runs 7 validation tests
+4. Runs validation tests
 5. Verifies all 4 tools import correctly
-6. Shows available commands
 
 ### Option B: Manual Setup
 
 ```bash
+mkdir -p "bitbucket-qa"
+cd "bitbucket-qa"
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/macOS
-source venv/bin/activate
-
-pip install -r requirements.txt
+source venv/bin/activate   # or venv\Scripts\activate on Windows
+pip install -r ../requirements.txt
 ```
-
-### Option C: No Local Setup Needed
-
-The pipeline runs automatically on BitBucket. Just push code — no local setup required.
 
 ---
 
-## 6. Tools Deep Dive
+## 7. Tools Deep Dive
 
-### 6.1 Smart Test Selector (`smart_test_selector.py`)
+### 7.1 Smart Test Selector (`smart_test_selector.py`)
 
 **Purpose:** Analyze code changes and run only the affected tests.
 
 **How it works:**
 1. Reads git diff to find changed files
-2. Parses Python AST to map source files → test files
-3. Generates a `test-matrix.json` with affected tests
+2. Parses Python AST to map source files to test files
+3. Generates `test-matrix.json` with affected tests
 4. Pipeline reads this matrix and skips unaffected tests
 
-**Key class:** `SmartTestSelector`
-
 **Key methods:**
-- `_get_changed_files()` — Gets files changed via git diff (supports PR diffs and local diffs)
-- `_build_test_mapping()` — Parses test files' imports using Python AST to create source→test mapping
-- `get_affected_tests()` — Returns set of test files affected by changes
-- `generate_test_matrix()` — Produces JSON matrix for parallel test execution
-- `should_run_tests()` — Cache-based check using MD5 hashes to skip unchanged tests
+- `_get_changed_files()` — Gets files changed via git diff
+- `_build_test_mapping()` — Parses test imports using Python AST
+- `get_affected_tests()` — Returns set of affected test files
+- `generate_test_matrix()` — Produces JSON matrix for parallel execution
+- `should_run_tests()` — Cache-based check using SHA256 hashes
 
 **Intelligence features:**
-- If `requirements.txt` changes → ALL tests run (dependency changes affect everything)
+- If `requirements.txt` changes → ALL tests run
 - If only a test file changes → only that test runs
 - If a source file changes → tests that import it run
-- MD5 caching prevents re-running identical tests
-
-**CLI:**
-```bash
-python smart_test_selector.py --summary --generate-matrix
-python smart_test_selector.py --generate-matrix --output my-matrix.json
-```
 
 ---
 
-### 6.2 Performance Benchmark (`performance_benchmark.py`)
+### 7.2 Performance Benchmark (`performance_benchmark.py`)
 
 **Purpose:** Track execution time, memory, and CPU to detect regressions.
 
-**How it works:**
-1. Decorates functions with `@benchmark.benchmark("name")`
-2. Measures: execution time, CPU time, memory before/after, peak memory
-3. Saves results to `.benchmarks/current.json`
-4. Compares against saved baseline to find regressions
-
-**Key class:** `PerformanceBenchmark`
-
 **Key methods:**
-- `benchmark(name)` — Decorator that instruments any function with timing/memory tracking
-- `save_baseline()` — Saves current results as the baseline (also creates timestamped backup)
-- `compare_with_baseline()` — Returns regressions (>10% slower) and improvements (>5% faster)
-- `generate_html_report()` — Produces `.benchmarks/performance-report.html`
+- `benchmark(name)` — Decorator that instruments any function
+- `save_baseline()` — Saves current results as baseline
+- `compare_with_baseline()` — Returns regressions and improvements
+- `generate_html_report()` — Produces HTML report
 - `check_regressions(threshold)` — Returns True if any function exceeds threshold
 
-**Measurement data per benchmark:**
+**Measurement data:**
 ```json
 {
   "name": "example_function",
-  "timestamp": "2026-06-26T16:00:00",
   "execution_time": 0.102,
   "cpu_time": 0.098,
   "memory_before_mb": 15.2,
   "memory_after_mb": 15.4,
   "memory_peak_mb": 0.3,
-  "memory_increase_mb": 0.2,
   "cpu_percent": 2.1
 }
 ```
 
-**CLI:**
-```bash
-python performance_benchmark.py --run-benchmarks --generate-report
-python performance_benchmark.py --save-baseline
-python performance_benchmark.py --compare-baseline
-python performance_benchmark.py --check-regressions 15.0
-```
-
 ---
 
-### 6.3 Dependency Health Check (`dependency_health.py`)
+### 7.3 Dependency Health Check (`dependency_health.py`)
 
-**Purpose:** Monitor all packages for outdated versions, vulnerabilities, and overall health.
-
-**How it works:**
-1. Parses `requirements.txt` to get all packages
-2. Queries PyPI API for latest version and metadata
-3. Queries OSV.dev and PyUp for known vulnerabilities
-4. Calculates a health score (0-100) per package
-5. Generates HTML report with recommendations
-
-**Key class:** `DependencyHealthCheck`
+**Purpose:** Monitor all packages for outdated versions, vulnerabilities, and health.
 
 **Health score factors:**
+
 | Factor | Impact |
 |--------|--------|
 | No release in 365+ days | -20 points |
 | No release in 180+ days | -10 points |
 | Low downloads (<1000/month) | -15 points |
 | Each vulnerability found | -10 points (max -50) |
-| Project in Planning/Pre-Alpha | -25 to -30 points |
-| Project in Alpha | -15 points |
-| Project in Beta | -5 points |
 | Mature project | +5 points |
 | Inactive project | -40 points |
 
-**Data sources:**
-- **PyPI API** — Package metadata, release history, download stats
-- **OSV.dev** — Open Source Vulnerability database
-- **PyUp** — Additional vulnerability data
-- **pypistats.org** — Download statistics
+**Data sources:** PyPI API, OSV.dev, PyUp, pypistats.org
 
-**Caching:** Results cached for 24 hours (PyPI, pypistats) and 6 hours (vulnerabilities). All caches persisted to disk via `_save_caches()`.
-
-**CLI:**
-```bash
-python dependency_health.py --check-all --generate-report
-python dependency_health.py --check-all --fail-on-issues
-python dependency_health.py --check-all --output-json report.json
-```
+**Caching:** Results cached for 24h (PyPI, pypistats) and 6h (vulnerabilities).
 
 ---
 
-### 6.4 Pipeline Dashboard (`pipeline_dashboard.py`)
+### 7.4 Pipeline Dashboard (`pipeline_dashboard.py`)
 
-**Purpose:** Record pipeline metrics and generate interactive visual dashboard.
-
-**How it works:**
-1. Records each pipeline run to SQLite database
-2. Collects: run status, duration, branch, test results, step metrics
-3. Generates Plotly-based interactive HTML dashboard
-
-**Key class:** `PipelineDashboard`
-
-**Database schema:**
-```
-pipeline_runs (run_id, timestamp, branch, commit_hash, status, duration, ...)
-step_metrics (run_id, step_name, duration, status, ...)
-test_results (run_id, total_tests, passed, failed, coverage, ...)
-performance_metrics (run_id, function_name, execution_time, memory_used, ...)
-```
+**Purpose:** Record pipeline metrics and generate interactive dashboard.
 
 **Dashboard charts:**
-1. Daily Pipeline Runs (bar chart)
-2. Success Rate by Branch (bar chart with color coding)
-3. Step Duration (bar chart — which steps are slowest)
-4. Test Coverage Trend (line chart with 85% minimum line)
-5. Pipeline Duration Trend (line chart)
-6. Step Success Rate (bar chart)
+1. Daily Pipeline Runs
+2. Success Rate by Branch
+3. Step Duration
+4. Test Coverage Trend
+5. Pipeline Duration Trend
+6. Step Success Rate
 
-**BitBucket environment variables used:**
-- `BITBUCKET_BUILD_NUMBER`, `BITBUCKET_BRANCH`, `BITBUCKET_COMMIT`
-- `BITBUCKET_COMMIT_MESSAGE`, `BITBUCKET_PR_ID`, `BITBUCKET_EXIT_CODE`
-
-**CLI:**
-```bash
-python pipeline_dashboard.py --record-metrics
-python pipeline_dashboard.py --generate-dashboard --days 30
-python pipeline_dashboard.py --simulate-data  # Generate test data
-```
+**Database:** SQLite with tables for `pipeline_runs`, `step_metrics`, `test_results`, `performance_metrics`.
 
 ---
 
-## 7. CI/CD Pipeline Explained
+## 8. CI/CD Pipeline Explained
 
-### Pipeline Configuration (`bitbucket-pipelines.yml`)
+### Pipeline Configuration
 
-**Image:** `python:3.11`  
-**Docker:** Enabled  
-**Size:** 2x (double resources)  
-**Max timeout:** 30 minutes per step  
-**Caches:** pip packages + pytest cache (persisted between runs)
+- **Image:** `python:3.11`
+- **Docker:** Enabled
+- **Size:** 2x (double resources)
+- **Max timeout:** 30 minutes per step
+- **Coverage threshold:** 30% (consistent with local hook)
 
-### Trigger Types
+### Coverage Threshold Consistency
 
-| Trigger | When | Stages Run |
-|---------|------|-----------|
-| Pull Request | Any PR | Full pipeline (all 6 stages) |
-| Push to `main` | Merge to main | Full pipeline (all 6 stages) |
-| Push to other branch | Any feature branch | Quick validation only (stages 1, 3, 4) |
+Both the local pre-push hook and the CI pipeline use `--cov-fail-under=30`. This ensures code that passes locally also passes in CI, and vice versa.
 
 ---
 
-## 8. How the Pipeline Works (Stage by Stage)
+## 9. How the Pipeline Works
 
 ### Stage 1: Cache & Precheck (Parallel)
 
-**Step 1a — Smart Cache Setup:**
-```
-pip install --upgrade pip
-pip install -r requirements.txt
-pip freeze > installed-packages.txt
-```
-- Installs all dependencies
-- Saves frozen package list as artifact
-
-**Step 1b — Pre-merge Validation:**
-```
-pytest test_precheck.py -v --junitxml=test-results/precheck.xml
-```
-- Validates Python syntax of all `.py` files
-- Checks no empty files exist
-- Verifies `requirements.txt` and `bitbucket-pipelines.yml` exist
-- Produces JUnit XML for BitBucket UI
+- Install dependencies, freeze packages
+- Validate Python syntax, check file existence
 
 ### Stage 2: Test Impact Analysis
 
-```
-python smart_test_selector.py --generate-matrix --summary
-```
-- Analyzes git diff to find changed files
-- Maps changes to affected tests
-- Outputs `test-matrix.json` used by later stages
-- If no tests affected → runs smoke tests or all tests
+- Analyze git diff, map changes to tests
+- Output `test-matrix.json` for later stages
 
 ### Stage 3: Quality Checks (Parallel)
 
-**Step 3a — Lint & Format:**
-```
-black --check . --diff          # Code formatting
-isort --check-only . --diff    # Import sorting
-flake8 . --max-line-length=120 # Style guide
-pylint **/*.py --fail-under=8.0 || true  # Code analysis (advisory)
-```
-
-**Step 3b — Type Checking:**
-```
-mypy . --ignore-missing-imports --strict
-```
-- Static type analysis
-- Strict mode with import ignore
-
-**Step 3c — Security Scan:**
-```
-bandit -r . -ll -f json -o bandit-report.json
-pip-audit --requirement requirements.txt -f json -o pip-audit.json
-```
-- **bandit** — Finds common security issues in Python code
-- **pip-audit** — Checks packages against vulnerability databases
-
-**Step 3d — Complexity & Dead Code:**
-```
-radon cc . -s -n B --json > radon-report.json
-vulture . --min-confidence 80 --sort-by-size > vulture-report.txt
-```
-- **radon** — Cyclomatic complexity analysis (flags grade B and below)
-- **vulture** — Finds unused code (80% confidence threshold)
+- Lint & format (black, isort, flake8)
+- Type checking (mypy)
+- Security scan (bandit, pip-audit)
+- Complexity analysis (radon, vulture)
 
 ### Stage 4: Tests & Coverage
 
-```
-pytest tests/ -n auto --dist loadscope \
-  --cov=. --cov-report=xml --cov-report=html \
-  --cov-fail-under=85 \
-  --junitxml=test-results/results.xml \
-  --html=test-results/report.html --self-contained-html
-```
-- Runs affected tests (from test-matrix.json) or all tests
-- Parallel execution with `pytest-xdist` (`-n auto`)
-- Coverage minimum: **85%** (pipeline fails if below)
-- Produces: XML report, HTML report, coverage XML
+- Run affected tests with parallel execution
+- Enforce 30% minimum coverage
 
 ### Stage 5: Benchmark & Dependencies (Parallel)
 
-**Step 5a — Performance Benchmark:**
-```
-python performance_benchmark.py --run-benchmarks --generate-report
-python performance_benchmark.py --compare-baseline
-```
-- Runs benchmarks and compares against baseline
-- Flags regressions >10%
-
-**Step 5b — Dependency Health:**
-```
-python dependency_health.py --check-all --generate-report --fail-on-issues
-```
-- Checks all 28 packages for vulnerabilities and updates
-- Fails pipeline if critical issues found
+- Performance benchmarking
+- Dependency health check
 
 ### Stage 6: Dashboard
 
-```
-python pipeline_dashboard.py --record-metrics
-python pipeline_dashboard.py --generate-dashboard --days 30
-```
-- Records this run's metrics to SQLite database
-- Regenerates the interactive dashboard
-- Dashboard HTML saved as artifact
-
----
-
-## 9. Data Flow Diagram
-
-```
-Developer Push
-      │
-      ▼
-┌─────────────┐     ┌─────────────────┐     ┌──────────────┐
-│  git diff    │────▶│ Smart Test      │────▶│ test-matrix  │
-│  analysis    │     │ Selector        │     │ .json        │
-└─────────────┘     └─────────────────┘     └──────┬───────┘
-                                                    │
-      ┌─────────────────────────────────────────────┘
-      │
-      ▼
-┌─────────────┐     ┌─────────────────┐
-│ pytest with │────▶│ Coverage XML/HTML│
-│ -n auto     │     │ + JUnit XML     │
-└─────────────┘     └─────────────────┘
-
-┌─────────────┐     ┌─────────────────┐
-│ PyPI + OSV  │────▶│ Health Report   │
-│ API queries │     │ (HTML)          │
-└─────────────┘     └─────────────────┘
-
-┌─────────────┐     ┌─────────────────┐
-│ Benchmark   │────▶│ performance-    │
-│ execution   │     │ report.html     │
-└─────────────┘     └─────────────────┘
-
-┌─────────────┐     ┌─────────────────┐
-│ Metrics DB  │────▶│ Dashboard HTML  │
-│ (SQLite)    │     │ (Plotly charts) │
-└─────────────┘     └─────────────────┘
-```
+- Record metrics to SQLite
+- Generate interactive Plotly dashboard
 
 ---
 
@@ -498,99 +368,58 @@ Developer Push
 
 ### Test Layers
 
-| Layer | File | Tests | Purpose |
-|-------|------|-------|---------|
-| **Precheck** | `test_precheck.py` | 4 | Syntax validation, file existence (CWD-independent) |
-| **Sample** | `tests/test_sample.py` | 2 | Import validation, basic sanity |
-| **Unit** | `tests/test_fixes.py` | 13 | `_strip_extras()`, pypistats caching, tracemalloc guard |
-| **Integration** | Pipeline stages | All | End-to-end pipeline validation |
-| **Manual** | setup_all.py | 4 tool checks | Verify all tools import correctly |
+| Layer | File | Purpose |
+|-------|------|---------|
+| **Precheck** | `test_precheck.py` | Syntax validation, file existence |
+| **Sample** | `tests/test_sample.py` | Import validation, sanity |
+| **Unit** | `tests/test_fixes.py` | Bug fix verification |
+| **Unit** | `tests/test_tools_units.py` | Tool internal logic |
+| **Quality Gate** | `tests/test_quality_gate.py` | Project rules + isolation enforcement |
 
-### Precheck Tests (Detailed)
+### Isolation Tests (v1.3.0)
 
-1. **test_python_syntax** — Parses every `.py` file with `ast.parse()` to catch syntax errors
-2. **test_no_empty_python_files** — Checks file sizes aren't zero
-3. **test_requirements_exists** — Confirms `requirements.txt` is present
-4. **test_pipeline_yml_exists** — Confirms `bitbucket-pipelines.yml` is present
-
-### Test Execution Flow
-
-```
-PR Created
-    │
-    ▼
-Stage 1: Precheck (4 precheck tests, fast)
-    │
-    ▼
-Stage 2: Test Impact Analysis → test-matrix.json
-    │
-    ▼
-Stage 4: Run affected tests (parallel, with coverage)
-    │
-    ▼
-Coverage >= 85%? ──── NO ──── Pipeline FAILS
-    │
-   YES
-    │
-    ▼
-Pipeline PASSES ✓
-```
+| Test | What It Verifies |
+|------|-----------------|
+| `test_pre_push_hook_delegates_to_qa_dir` | Hook `cd`s into `bitbucket-qa/` |
+| `test_no_hardcoded_user_paths` | No `C:\Users\...` in source files |
+| `test_setup_all_writes_only_to_qa_dir` | Setup targets only `bitbucket-qa/` |
 
 ---
 
 ## 11. Bugs Found & Fixed
 
-### Bugs Fixed During Development
+### v1.3.0 (July 15, 2026)
 
 | # | File | Bug | Fix | Severity |
 |---|------|-----|-----|----------|
-| 1 | `requirements.txt` | Pinned `==` versions incompatible with Python 3.14 | Changed to `>=X,<Y` upper bounds | Critical |
-| 2 | `performance_benchmark.py` | `%` in argparse help string crashes on Python 3.14 | Changed to "threshold percent" | Medium |
-| 3 | `pipeline_dashboard.py` | `GROUP BY date` / `ORDER BY date` SQLite alias conflicts with built-in `date()` function | Changed to `GROUP BY DATE(timestamp) ORDER BY DATE(timestamp)` | Critical |
-| 4 | `setup.bat` | Duplicate `if %errorlevel%` lines after edit | Replaced with thin wrapper calling `setup_all.py` | Low |
-| 5 | `setup.sh` | CRLF line endings break on Linux/macOS | Converted to LF, rewrote as thin wrapper | Medium |
-| 6 | `setup_all.py` | `shell=True` with list + paths containing spaces breaks on Windows | Removed `shell=True`, use list directly | Critical |
-| 7 | `setup_all.py` | Direct `pip.exe` call fails when pip module missing | Changed to `python -m pip` with ensurepip fallback | Medium |
-| 8 | All 4 tools | `base_dir = Path(__file__).parent.parent` resolves to wrong directory | Changed to `Path(__file__).parent` | Critical |
-| 9 | `performance_benchmark.py` | `--check-regressions` default=10.0 always truthy, fires on every run | Changed default to `None`, guard with `is not None` | Critical |
-| 10 | `dependency_health.py` | `_parse_requirements` includes upper bound in version string (e.g., `2.0.3,<3.0.0`) | Added `.split(',')[0].strip()` to extract lower bound only | Critical |
-| 11 | `smart_test_selector.py` | `tests_dir` used without existence check in `generate_test_matrix` else branch | Added `tests_dir.exists()` guard before `rglob` | Medium |
-| 12 | `performance_benchmark.py` | `tracemalloc.start()` called every decorated function call, resetting tracking | Added `tracemalloc.is_tracing()` guard; only start/stop if we own it | Medium |
-| 13 | `pipeline_dashboard.py` | `INSERT OR REPLACE` on parent row but plain `INSERT` on children creates orphaned rows | Delete child rows before inserting new ones in `record_run()` | Medium |
-| 14 | `dependency_health.py` | PyUp API returns 403 without auth, silently fails | Wrap in try/except, handle 403 with debug log | Medium |
-| 15 | `dependency_health.py` | Bare `except: pass` swallows all errors including `KeyboardInterrupt` | Changed to `except (requests.RequestException, ValueError, KeyError)` with logging | Low |
-| 16 | All 4 tools | All output via `print()`, no configurable verbosity | Migrated to `logging` module with `basicConfig` in each `main()` | Low |
-| 17 | `dependency_health.py` | pypistats.org API called for every package with no caching (28 HTTP calls/run) | Added `pypistats_cache.json` with 24h TTL | Low |
-| 18 | `dependency_health.py`, `performance_benchmark.py` | User-controlled data interpolated directly into HTML without escaping | Added `html_module.escape()` on all user strings in reports | Low |
-| 19 | `dependency_health.py` | `_save_caches()` never called, caches not persisted across runs | Added `checker._save_caches()` after `check_all_packages()` | Low |
-| 20 | `dependency_health.py` | `package[extra]>=1.0` syntax not handled in requirements parsing | Added `_strip_extras()` static method to split name from extras | Low |
-| 21 | `test_precheck.py` | `test_requirements_exists` and `test_pipeline_yml_exists` fail when CWD != project dir | Use `os.path.join(BASE_DIR, ...)` for path resolution | Low |
+| 1 | `setup_all.py` | Dead code after `return False` — `project_dir` unreachable | Fixed indentation to make code reachable | Critical |
+| 2 | `run_full_pipeline.bat` | Double-nesting: `BitBucket QA\BitBucket QA\` | Fixed to `BitBucket QA\` | Critical |
+| 3 | `bitbucket-pipelines.yml` | CI uses 85% coverage but local hook uses 30% | Aligned CI to 30% | Critical |
+| 4 | `dependency_health.py` | Only parses `==`, `>=`, `<=` specifiers | Added `~=`, `!=`, `>`, `<` | Medium |
+| 5 | `performance_benchmark.py` | Dead `result = str(e)` before re-raise | Removed dead assignment | Medium |
+| 6 | `performance_benchmark.py` | `check_regressions()` stops at first regression | Fixed to check all regressions | Medium |
+| 7 | `pipeline_dashboard.py` | SQLite connections not cleaned up on error | Added `try/finally` wrappers | Medium |
+| 8 | `smart_test_selector.py` | Uses MD5 for hashing | Replaced with SHA256 | Medium |
+| 9 | `test_precheck.py` | Does not exclude `bitbucket-qa/` from scanning | Added to exclusion list | Medium |
+| 10 | `_gen_setup.py` | Hardcoded user path `C:\Users\...` | Changed to `Path(__file__).parent` | Medium |
+| 11 | `test_phase1.sh` | Missing shebang line | Added `#!/bin/bash` | Low |
+| 12 | `fix_encoding.sh` | Missing shebang line | Added `#!/bin/bash` | Low |
+| 13 | `test_phase1.bat` | Wrong venv path (`venv\Scripts\activate`) | Fixed to `BitBucket QA\venv\...` | Low |
+| 14 | `test_phase1.sh` | Wrong venv path (`source venv/bin/activate`) | Fixed to `bitbucket-qa/venv/...` | Low |
+| 15 | `bitbucket-pipelines.yml` | `vulture --sort-by-size` not supported in 2.x | Removed flag | Low |
 
-### Root Cause of Bug #1
-Old venv was created with Python 3.10 but system has Python 3.14. The pinned versions (`pandas==2.0.3`, `numpy==1.24.3`) use C extensions that fail to compile on Python 3.14 because `pkg_resources` was removed.
-
-### Root Cause of Bug #3
-SQLite treats `date` as a function name. When a column alias is named `date`, `GROUP BY date` calls the `date()` function instead of grouping by the column.
-
-### Root Cause of Bug #8
-All 4 tools used `Path(__file__).parent.parent` to get the project root, but the scripts live in `BitBucket/` (the actual root), so `parent.parent` resolved to `QA Scripts/` — one level too high. This broke all file path lookups (cache dirs, requirements, DB, dashboard).
-
-### Root Cause of Bug #10
-`line.split('>=', 1)` produces `['pandas', '2.0.3,<3.0.0']`. The `.split(',')[0]` fix extracts just the lower bound `2.0.3`.
+### v1.1.0 (June 29, 2026) — 21 bugs fixed
+### v1.0.0 (June 26, 2026) — Initial release
 
 ---
 
 ## 12. Dependencies & Versioning
 
 ### Version Strategy
+
 All packages use **bounded ranges** (`>=X,<Y`):
 - **Lower bound:** Minimum version that works
 - **Upper bound:** Next major version (prevents breaking changes)
-
-This balances:
-- **Flexibility** — Patch/minor updates allowed
-- **Stability** — No surprise major version breaks
-- **Security** — Vulnerability fixes applied automatically
 
 ### Package List (28 packages)
 
@@ -604,114 +433,74 @@ This balances:
 | **Git** | GitPython |
 | **Utilities** | requests, python-dateutil, typing-extensions, click, colorama, tqdm, pyyaml |
 
-### Installation Notes
-- Python 3.14 removed `pkg_resources` (used by older pandas/numpy)
-- `setuptools` package may need manual install on Python 3.14
-- All packages tested working with `>=` pins on Python 3.14.5
-
 ---
 
 ## 13. Generated Files & Artifacts
 
-### Files Created by Tools
+### Files Created by Tools (all inside `bitbucket-qa/`)
 
 | File | Created By | Purpose |
 |------|-----------|---------|
-| `test-matrix.json` | smart_test_selector | List of tests to run |
-| `.test-cache/last_test_hash.txt` | smart_test_selector | MD5 cache for test change detection |
-| `.benchmarks/current.json` | performance_benchmark | Latest benchmark results |
-| `.benchmarks/baseline.json` | performance_benchmark | Saved baseline for comparison |
-| `.benchmarks/performance-report.html` | performance_benchmark | HTML report with charts |
-| `dependency-reports/latest_report.html` | dependency_health | Latest health report |
-| `dependency-reports/pypi_cache.json` | dependency_health | Cached PyPI data (24h) |
-| `dependency-reports/vuln_cache.json` | dependency_health | Cached vulnerability data (6h) |
-| `dependency-reports/pypistats_cache.json` | dependency_health | Cached pypistats download data (24h) |
-| `pipeline-metrics.db` | pipeline_dashboard | SQLite database with run history |
-| `dashboard/dashboard.html` | pipeline_dashboard | Interactive Plotly dashboard |
-| `installed-packages.txt` | Pipeline | pip freeze output |
-| `test-results/precheck.xml` | Pipeline | JUnit test results |
-| `test-results/results.xml` | Pipeline | JUnit test results |
-| `test-results/report.html` | Pipeline | HTML test report |
-| `coverage.xml` | Pipeline | Coverage data (Cobertura format) |
-| `htmlcov/**` | Pipeline | Coverage HTML report |
-| `bandit-report.json` | Pipeline | Security scan results |
-| `pip-audit.json` | Pipeline | Dependency audit results |
-| `radon-report.json` | Pipeline | Code complexity data |
-| `vulture-report.txt` | Pipeline | Dead code analysis |
-
-### Git-Ignored Files
-All generated files are excluded from git via `.gitignore`:
-- `*.db`, `dashboard/`, `.benchmarks/`, `dependency-reports/`
-- `.pytest_cache/`, `__pycache__/`, `venv/`
-- `coverage.xml`, `htmlcov/`, `test-results/`
-- `*.html` (except `index.html`), `installed-packages.txt`
+| `test-matrix.json` | smart_test_selector | Tests to run |
+| `.test-cache/last_test_hash.txt` | smart_test_selector | SHA256 cache |
+| `.benchmarks/current.json` | performance_benchmark | Latest results |
+| `.benchmarks/baseline.json` | performance_benchmark | Saved baseline |
+| `.benchmarks/performance-report.html` | performance_benchmark | HTML report |
+| `dependency-reports/*.html` | dependency_health | Health reports |
+| `dependency-reports/pypi_cache.json` | dependency_health | PyPI cache (24h) |
+| `dependency-reports/vuln_cache.json` | dependency_health | Vuln cache (6h) |
+| `pipeline-metrics.db` | pipeline_dashboard | SQLite database |
+| `dashboard/dashboard.html` | pipeline_dashboard | Interactive dashboard |
 
 ---
 
 ## 14. Troubleshooting
 
-### Common Issues
+### "Push blocked on tests"
+- Read the failure output
+- Run: `cd "bitbucket-qa" && pytest test_precheck.py tests/ -v`
+- Fix the code, commit, push again
 
-**"Python not found"**
-- Install Python 3.11+ from https://www.python.org/downloads/
-- On Windows, check "Add Python to PATH" during installation
-
-**"No module named pip" in venv**
-- Run: `python -m ensurepip --upgrade`
-- Or delete `venv/` and run `setup.bat` / `setup.sh` again
-
-**"PermissionError: [WinError 5]" when deleting venv**
-- Close all Python processes, IDE terminals, and command prompts
-- Try running setup again
-
-**"No module named pkg_resources" on Python 3.14**
-- Run: `pip install setuptools`
-- Then re-run setup
-
-**Pipeline fails at coverage check (85% threshold)**
+### "Push blocked on coverage"
 - Add tests for new code
-- Check locally: `pytest tests/ --cov=. --cov-report=html`
+- Check: `cd "bitbucket-qa" && pytest tests/ --cov=. --cov-report=html`
 
-**SQLite "ambiguous column: date" error**
-- This was fixed — ensure you're using the latest code from `main`
+### "Script modified my project files"
+**This should never happen.** The QA suite is completely isolated inside `bitbucket-qa/`. Report it as a critical bug.
 
-**Encoding issues between Windows/Linux**
-- Run: `fix_encoding.bat` (Windows) or `fix_encoding.sh` (Linux)
+### "Python not found"
+- Install Python 3.11+ from https://www.python.org/downloads/
+- On Windows, check "Add Python to PATH"
 
-### Getting Help
-
-1. Check this document first
-2. Run `setup.bat` / `setup.sh` to verify environment
-3. Run `pytest test_precheck.py -v` to validate project structure
-4. Check pipeline logs on BitBucket for CI-specific issues
+### "Module not found"
+- Run: `cd "bitbucket-qa" && pip install -r ../requirements.txt`
 
 ---
 
 ## 15. FAQ
 
-**Q: Do I need to install this on my machine?**
-A: No. The pipeline runs automatically on BitBucket. Local setup is optional for running tools manually.
+**Q: Do I need to install this on my machine?**  
+A: No. The pipeline runs automatically. Local setup is optional for running tools manually.
 
-**Q: What happens if I don't have Python 3.11+?**
-A: The setup script will tell you to install it. The pipeline uses `python:3.11` Docker image so it always works in CI.
+**Q: Will this modify my project files?**  
+A: Never. The entire QA suite lives inside `bitbucket-qa/` and never touches files outside it.
 
-**Q: Can I run individual tools without the full pipeline?**
-A: Yes. Each tool has its own CLI. See the Tools Deep Dive section above.
+**Q: Can I run individual tools?**  
+A: Yes. `cd "bitbucket-qa"` and run any tool directly.
 
-**Q: What if I break the pipeline?**
-A: The pipeline is designed to catch issues before they reach `main`. Fix the issue in your PR and push again.
+**Q: What if I break the pipeline?**  
+A: Fix the issue in your PR and push again.
 
-**Q: How do I add new tests?**
-A: Add `test_*.py` files in the `tests/` directory. The smart test selector will automatically discover and map them.
+**Q: How do I add new tests?**  
+A: Add `test_*.py` files in `bitbucket-qa/tests/`. The smart test selector auto-discovers them.
 
-**Q: How do I update dependencies?**
-A: Edit `requirements.txt` with the new version bounds. The dependency health tool will validate them.
+**Q: How do I update dependencies?**  
+A: Edit `bitbucket-qa/requirements.txt` with new version bounds.
 
-**Q: What does the dashboard show?**
-A: Pipeline success rates, test coverage trends, step durations, and branch health — all from the last 30 days.
+**Q: What does the dashboard show?**  
+A: Pipeline success rates, test coverage trends, step durations, and branch health.
 
 ---
 
-*Document generated as part of the BitBucket Pipeline QA & Utility Suite.*
+*Document generated as part of the BitBucket Pipeline QA & Utility Suite.*  
 *Author: Sr. QA Tester - Akshaykumar Dudhwala*
-*For questions, contact the author or check the README.md.*
