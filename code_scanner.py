@@ -470,7 +470,7 @@ def format_result(result: ScanResult) -> str:
     if result.errors > 0:
         lines.append(f"  RESULT: BLOCKED — {result.errors} error(s) must be fixed")
     else:
-        lines.append(f"  RESULT: PASSED")
+        lines.append("  RESULT: PASSED")
     lines.append("-" * 70)
     lines.append("")
 

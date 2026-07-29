@@ -111,7 +111,7 @@ class PipelineDashboard:
 
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO pipeline_runs 
+                INSERT OR REPLACE INTO pipeline_runs
                 (run_id, timestamp, branch, commit_hash, commit_message, author, status, duration, triggered_by, pipeline_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -137,7 +137,7 @@ class PipelineDashboard:
             for i, step in enumerate(data.get("steps", [])):
                 cursor.execute(
                     """
-                    INSERT INTO step_metrics 
+                    INSERT INTO step_metrics
                     (run_id, step_name, step_index, duration, status, start_time, end_time)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -156,7 +156,7 @@ class PipelineDashboard:
                 tests = data["test_results"]
                 cursor.execute(
                     """
-                    INSERT INTO test_results 
+                    INSERT INTO test_results
                     (run_id, total_tests, passed, failed, skipped, coverage, duration)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -459,7 +459,7 @@ class PipelineDashboard:
                 "branch": random.choice(branches),
                 "commit_hash": f"abc{random.randint(100, 999)}def",
                 "commit_message": f"Test commit {i}",
-                "author": f"user{random.randint(1,5)}@example.com",
+                "author": f"user{random.randint(1, 5)}@example.com",
                 "status": random.choice(statuses),
                 "duration": random.uniform(60, 300),
                 "triggered_by": "pull_request" if random.random() > 0.5 else "push",

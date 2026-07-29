@@ -16,8 +16,8 @@ for row in c.fetchall():
 # 2. For each of last 7 days, count sessions
 print("\n=== SESSION COUNT BY DATE (last 7 days) ===")
 c.execute("""
-    SELECT date(time_created) as d, count(*) 
-    FROM session 
+    SELECT date(time_created) as d, count(*)
+    FROM session
     WHERE project_id=? AND time_created >= datetime('now', '-7 days')
     GROUP BY d ORDER BY d
 """, (PID,))

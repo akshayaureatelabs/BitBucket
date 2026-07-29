@@ -6,13 +6,6 @@ is locked down: requirement parsing, health-score inputs, dashboard DB
 recording/metrics, and smart-test-selector mapping.
 """
 
-from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # dependency_health.py
 # ---------------------------------------------------------------------------
@@ -65,8 +58,6 @@ def test_parse_requirements_skips_comments_and_blanks(tmp_path):
 
 
 def test_health_score_penalizes_vulnerabilities(tmp_path):
-    from dependency_health import DependencyHealthCheck
-
     ch = _make_checker(tmp_path)
     info = {"info": {"name": "x", "version": "1.0"}, "releases": {}}
     clean = ch.calculate_health_score(info, [])
@@ -77,8 +68,6 @@ def test_health_score_penalizes_vulnerabilities(tmp_path):
 
 
 def test_health_score_mature_bonus(tmp_path):
-    from dependency_health import DependencyHealthCheck
-
     ch = _make_checker(tmp_path)
     info = {
         "info": {

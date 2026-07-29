@@ -56,7 +56,7 @@ class PerformanceBenchmark:
                 try:
                     result = func(*args, **kwargs)
                     status = "success"
-                except Exception as e:
+                except Exception:
                     status = "failed"
                     raise
                 finally:
@@ -300,19 +300,19 @@ class PerformanceBenchmark:
 <body>
     <h1>Performance Benchmark Report</h1>
     <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-    
+
     <div class="summary">
         <h2>Summary</h2>
         <p>Total Benchmarks: {summary['total_benchmarks']}</p>
         <p>Unique Functions: {summary['unique_functions']}</p>
     </div>
-    
+
     <h2>Slowest Functions</h2>
     <table><tr><th>Function</th><th>Avg Time (s)</th></tr>{slowest_rows}</table>
-    
+
     <h2>Memory Usage</h2>
     <table><tr><th>Function</th><th>Avg Memory Increase (MB)</th></tr>{memory_rows}</table>
-    
+
     <h2>Comparison with Baseline</h2>"""
 
         if comparison.get("regressions"):

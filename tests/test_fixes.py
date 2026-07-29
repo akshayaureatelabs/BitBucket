@@ -7,22 +7,18 @@ Tests cover:
 """
 
 import json
-import os
 import sys
-import tempfile
 import time
 import tracemalloc
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Add project root to path so we can import the tools
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dependency_health import DependencyHealthCheck
-from performance_benchmark import PerformanceBenchmark
+from dependency_health import DependencyHealthCheck  # noqa: E402
+from performance_benchmark import PerformanceBenchmark  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # _strip_extras() tests
@@ -153,7 +149,7 @@ class TestPypistatsCaching:
         with patch.object(
             checker.session, "get", return_value=mock_response
         ) as mock_get:
-            health = checker.calculate_health_score(package_info, [])
+            _ = checker.calculate_health_score(package_info, [])
 
         # API should have been called because cache was stale
         mock_get.assert_called()
@@ -173,7 +169,7 @@ class TestPypistatsCaching:
         package_info = {"info": {"name": "fresh-pkg"}, "releases": {}}
 
         with patch("dependency_health.requests.get") as mock_get:
-            health = checker.calculate_health_score(package_info, [])
+            _ = checker.calculate_health_score(package_info, [])
 
         # API should NOT have been called — cache was fresh
         mock_get.assert_not_called()

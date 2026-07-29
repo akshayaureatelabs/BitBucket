@@ -14,7 +14,7 @@ keywords = ["always", "never", "remember", "rule", "decision", "decided", "reaso
 print("=== USER MESSAGES WITH RULE KEYWORDS (last 7 days) ===")
 for kw in keywords:
     c.execute("""
-        SELECT m.id, m.session_id, 
+        SELECT m.id, m.session_id,
                datetime(m.time_created/1000, 'unixepoch') as created,
                json_extract(p.data, '$.text') as text
         FROM message m

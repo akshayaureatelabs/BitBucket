@@ -15,7 +15,7 @@ print(f"=== SESSIONS SINCE {seven_days_ago} ===")
 c.execute("""
     SELECT id, title, time_created,
            datetime(time_created/1000, 'unixepoch') as created_utc
-    FROM session 
+    FROM session
     WHERE project_id=?
     ORDER BY time_created DESC
 """, (PID,))

@@ -471,7 +471,7 @@ class DependencyHealthCheck:
 <body>
     <h1>Dependency Health Report</h1>
     <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-    
+
     <div class="summary">
         <h2>Summary</h2>
         <p>Total Packages: {total}</p>
@@ -481,7 +481,7 @@ class DependencyHealthCheck:
         <p class="vuln">Packages with Vulnerabilities: {vulnerable}</p>
         <p>Updates Available: {needs_update}</p>
     </div>
-    
+
     <h2>Package Details</h2>
     <table>
         <tr>
@@ -489,7 +489,7 @@ class DependencyHealthCheck:
         </tr>
         {html_rows}
     </table>
-    
+
     <h2>Recommendations</h2>
     <ul>{recommendations}</ul>
 </body>
