@@ -15,6 +15,7 @@ setup_path = ROOT / "setup_all.py"
 
 sources = {
     "requirements.txt": "requirements.txt",
+    "requirements.lock": "requirements.lock",
     ".gitignore": "qa_gitignore_template.txt",
     "code_scanner.py": "code_scanner.py",
     "test_precheck.py": "test_precheck.py",
@@ -22,6 +23,7 @@ sources = {
     "tests/test_sample.py": "tests/test_sample.py",
     "tests/test_fixes.py": "tests/test_fixes.py",
     "tests/test_quality_gate.py": "tests/test_quality_gate.py",
+    "tests/test_scanner_exit.py": "tests/test_scanner_exit.py",
     "tests/test_tools_units.py": "tests/test_tools_units.py",
     "dependency_health.py": "dependency_health.py",
     "performance_benchmark.py": "performance_benchmark.py",
