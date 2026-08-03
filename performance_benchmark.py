@@ -377,14 +377,31 @@ def main():
     benchmark = PerformanceBenchmark()
 
     if args.run_benchmarks:
-        @benchmark.benchmark("example_function")
-        def example_function():
-            time.sleep(0.1)
-            return "done"
+        # Benchmark real suite helpers (not a pure sleep toy)
+        @benchmark.benchmark("json_roundtrip")
+        def json_roundtrip():
+            payload = {"n": list(range(500)), "msg": "bench" * 20}
+            return json.loads(json.dumps(payload))
+
+        @benchmark.benchmark("path_stat_walk")
+        def path_stat_walk():
+            root = Path(__file__).parent
+            return sum(1 for p in root.glob("*.py") if p.is_file())
+
+        @benchmark.benchmark("sha256_chunk")
+        def sha256_chunk():
+            import hashlib
+            h = hashlib.sha256()
+            data = b"x" * 65536
+            for _ in range(8):
+                h.update(data)
+            return h.hexdigest()
 
         logger.info("Running benchmarks...")
-        for i in range(5):
-            example_function()
+        for _ in range(5):
+            json_roundtrip()
+            path_stat_walk()
+            sha256_chunk()
         logger.info("Benchmarks complete")
 
     if args.compare_baseline:
