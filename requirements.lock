@@ -1,0 +1,40 @@
+# Locked dependency baseline for reproducible installs.
+# Generated from requirements.txt lower bounds (2026-08-03).
+# Regenerate: pip install -r requirements.txt && pip freeze > requirements.lock
+#
+# Prefer: pip install -r requirements.lock
+# Develop:  pip install -r requirements.txt
+
+# TESTING FRAMEWORK
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-xdist==3.3.1
+pytest-html==4.1.1
+pytest-timeout==2.1.0
+pytest-mock==3.11.1
+
+# CODE QUALITY & LINTING
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+pylint==3.0.2
+radon==6.0.1
+vulture==2.10
+
+# SECURITY SCANNING
+bandit==1.7.5
+pip-audit==2.6.1
+
+# PERFORMANCE MONITORING
+psutil==5.9.5
+
+# NETWORKING & APIS
+requests==2.31.0
+
+# DATA PROCESSING
+plotly==5.17.0
+
+# UTILITIES
+python-dateutil==2.8.2
+colorama==0.4.6
