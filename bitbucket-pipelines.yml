@@ -100,8 +100,8 @@ definitions:
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - radon cc . -s -n B --json --exclude "venv,bitbucket-qa,.git,__pycache__" > radon-report.json || true
-          - vulture . --min-confidence 80 --exclude venv,bitbucket-qa > vulture-report.txt || true
+          - radon cc . -s -n B --json --exclude "venv,bitbucket-qa,.git,__pycache__,.mypy_cache,.pytest_cache,htmlcov,dashboard,dependency-reports,test-results,.benchmarks,.test-cache" > radon-report.json
+          - vulture . --min-confidence 80 --exclude venv,bitbucket-qa,.git,__pycache__ > vulture-report.txt
         artifacts: [radon-report.json, vulture-report.txt]
 
     - step: &performance-benchmark
