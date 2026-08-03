@@ -502,7 +502,8 @@ def main():
     print(output)
     print(f"  For full output, refer to: {output_file}")
     print()
-    sys.exit(0)
+    # Exit non-zero on ERROR severity so hooks can block commit/push
+    sys.exit(1 if result.errors else 0)
 
 
 if __name__ == "__main__":
