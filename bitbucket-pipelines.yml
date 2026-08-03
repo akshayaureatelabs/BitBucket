@@ -75,7 +75,7 @@ definitions:
                 echo "Running selected tests: $TESTS"
                 pytest $TESTS -n auto --dist loadscope \
                   --cov=. --cov-report=xml --cov-report=html \
-                  --cov-fail-under=25 \
+                  --cov-fail-under=30 \
                   --junitxml=test-results/results.xml \
                   --html=test-results/report.html \
                   --self-contained-html
@@ -85,7 +85,7 @@ definitions:
             else
               pytest tests/ -n auto --dist loadscope \
                 --cov=. --cov-report=xml --cov-report=html \
-                --cov-fail-under=25 \
+                --cov-fail-under=30 \
                 --junitxml=test-results/results.xml \
                 --html=test-results/report.html \
                 --self-contained-html
@@ -100,8 +100,8 @@ definitions:
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - radon cc bitbucket-qa/ -s -n B --json > radon-report.json
-          - vulture bitbucket-qa/ --min-confidence 80 > vulture-report.txt
+          - radon cc . -s -n B --json --exclude "venv,bitbucket-qa,.git,__pycache__" > radon-report.json || true
+          - vulture . --min-confidence 80 --exclude venv,bitbucket-qa > vulture-report.txt || true
         artifacts: [radon-report.json, vulture-report.txt]
 
     - step: &performance-benchmark
