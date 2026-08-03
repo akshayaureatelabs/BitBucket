@@ -22,19 +22,55 @@ import pytest
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# Walk up to find repo root (where .git lives)
-REPO_ROOT = BASE_DIR
-candidate = BASE_DIR
-while candidate != os.path.dirname(candidate):
-    if os.path.isdir(os.path.join(candidate, ".git")):
-        REPO_ROOT = candidate
-        break
-    candidate = os.path.dirname(candidate)
 
-# Find the actual project root (one level above bitbucket-qa, or same dir)
-PROJECT_ROOT = REPO_ROOT
-if os.path.basename(BASE_DIR) == "bitbucket-qa" and os.path.isdir(os.path.join(os.path.dirname(BASE_DIR), ".git")):
-    PROJECT_ROOT = os.path.dirname(BASE_DIR)
+def _find_repo_root(start: str) -> str:
+    """Resolve git work-tree root robustly."""
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", start, "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        ).strip()
+        if out and os.path.isdir(out):
+            return os.path.abspath(out)
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+        pass
+
+    candidate = start
+    while True:
+        if os.path.isdir(os.path.join(candidate, ".git")):
+            return candidate
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
+    return start
+
+
+def _find_suite_root(start: str) -> str:
+    """Directory that holds the QA suite (code_scanner + requirements)."""
+    markers = ("code_scanner.py", "requirements.txt")
+    candidate = start
+    while True:
+        if all(os.path.isfile(os.path.join(candidate, m)) for m in markers):
+            return candidate
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
+    return start
+
+
+REPO_ROOT = _find_repo_root(BASE_DIR)
+SUITE_ROOT = _find_suite_root(BASE_DIR)
+
+# When installed via setup_all into bitbucket-qa/, scan the parent project.
+# When developing this repo itself, suite root == repo root.
+if os.path.basename(SUITE_ROOT) == "bitbucket-qa":
+    PROJECT_ROOT = os.path.dirname(SUITE_ROOT)
+else:
+    PROJECT_ROOT = REPO_ROOT
 
 
 def get_project_files():
@@ -64,7 +100,7 @@ def get_qa_files():
         "venv", ".venv", "__pycache__", ".pytest_cache",
         ".git", "tests", "bitbucket-qa",
     }
-    for root, dirs, filenames in os.walk(BASE_DIR):
+    for root, dirs, filenames in os.walk(SUITE_ROOT):
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
         for fn in filenames:
             if fn.endswith(".py") and fn not in ("test_precheck.py",):
@@ -79,7 +115,7 @@ def get_qa_files():
 
 def test_code_scanner_passes():
     """Run code_scanner.py on the project and verify zero errors."""
-    scanner_path = os.path.join(BASE_DIR, "code_scanner.py")
+    scanner_path = os.path.join(SUITE_ROOT, "code_scanner.py")
     if not os.path.exists(scanner_path):
         pytest.skip("code_scanner.py not found")
 
@@ -136,19 +172,19 @@ def test_no_empty_qa_python_files():
 
 def test_requirements_exists():
     """Ensure requirements.txt exists."""
-    req_path = os.path.join(BASE_DIR, "requirements.txt")
+    req_path = os.path.join(SUITE_ROOT, "requirements.txt")
     assert os.path.exists(req_path), "requirements.txt not found in QA directory"
 
 
 def test_bitbucket_pipelines_exists():
     """Ensure bitbucket-pipelines.yml exists."""
-    yml_path = os.path.join(BASE_DIR, "bitbucket-pipelines.yml")
+    yml_path = os.path.join(SUITE_ROOT, "bitbucket-pipelines.yml")
     assert os.path.exists(yml_path), "bitbucket-pipelines.yml not found"
 
 
 def test_code_scanner_exists():
     """Ensure code_scanner.py exists."""
-    assert os.path.exists(os.path.join(BASE_DIR, "code_scanner.py")), (
+    assert os.path.exists(os.path.join(SUITE_ROOT, "code_scanner.py")), (
         "code_scanner.py not found - required for project code scanning"
     )
 
