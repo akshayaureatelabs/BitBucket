@@ -1,11 +1,3 @@
-# Virtual Environment
-venv/
-env/
-.venv/
-
-# Generated QA directory (created by setup_all.py)
-bitbucket-qa/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -15,6 +7,11 @@ __pycache__/
 dist/
 build/
 *.egg
+
+# Virtual Environment
+venv/
+env/
+.venv/
 
 # IDE
 .vscode/
@@ -30,23 +27,20 @@ htmlcov/
 coverage.xml
 test-results/
 
-# Generated output (all inside bitbucket-qa/ ideally, but also at root)
+# bitbucket-qa suite (managed by setup_all.py)
+bitbucket-qa/
+
+# Generated files
 *.db
 dashboard/
 .benchmarks/
 dependency-reports/
 installed-packages.txt
 test-matrix.json
-.mypy_cache/
-.test-cache/
 
 # Reports
 *.html
 !index.html
-bandit-report.json
-pip-audit.json
-radon-report.json
-vulture-report.txt
 
 # Logs
 *.log

@@ -10,7 +10,7 @@ import json
 import sys
 import time
 import tracemalloc
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -135,9 +135,9 @@ class TestPypistatsCaching:
         """Cache entries older than 24 hours should trigger a fresh API call."""
         checker = self._make_checker(tmp_path)
 
-        # Write a stale cache entry
+        # Write a stale cache entry (25 hours ago in UTC)
         checker.pypistats_data["old-pkg"] = {
-            "cached_at": (datetime.now() - timedelta(hours=25)).isoformat(),
+            "cached_at": (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(),
             "downloads": 999,
         }
 

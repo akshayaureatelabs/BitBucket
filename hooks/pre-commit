@@ -33,7 +33,7 @@ echo ""
 # -------------------------------------------------------
 echo ">>> 1/1 Syntax check (staged .py files)..."
 
-STAGED_PY=$(git -C "$REPO_ROOT" diff --cached --name-only --diff-filter=ACM -- '*.py')
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
 
 if [ -z "$STAGED_PY" ]; then
     echo "  No staged Python files - skipping syntax check."

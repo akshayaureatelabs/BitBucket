@@ -470,7 +470,7 @@ def format_result(result: ScanResult) -> str:
     if result.errors > 0:
         lines.append(f"  RESULT: BLOCKED — {result.errors} error(s) must be fixed")
     else:
-        lines.append("  RESULT: PASSED")
+        lines.append(f"  RESULT: PASSED")
     lines.append("-" * 70)
     lines.append("")
 
@@ -502,8 +502,7 @@ def main():
     print(output)
     print(f"  For full output, refer to: {output_file}")
     print()
-    # Exit non-zero on ERROR severity so hooks can block commit/push
-    sys.exit(1 if result.errors else 0)
+    sys.exit(1 if result.errors > 0 else 0)
 
 
 if __name__ == "__main__":

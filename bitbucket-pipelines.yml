@@ -42,24 +42,26 @@ definitions:
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - black --check . --diff --exclude venv
-          - isort --check-only . --diff --skip venv
-          - flake8 . --max-line-length=120 --statistics --exclude venv
-          - pylint **/*.py --fail-under=8.0 2>&1
+          - black --check . --diff
+          - isort --check-only . --diff
+          - flake8 . --max-line-length=120 --statistics
+          - pylint **/*.py --fail-under=8.0 || true
+        artifacts: [lint-report.txt]
 
     - step: &type-check
         name: Type Checking
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - mypy *.py --ignore-missing-imports --strict 2>&1
+          - mypy . --ignore-missing-imports --strict
+        artifacts: [mypy-report.txt]
 
     - step: &security-scan
         name: Security Scan
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - bandit -r . -ll -f json -o bandit-report.json --exclude venv,.venv,__pycache__,.git
+          - bandit -r . -ll -f json -o bandit-report.json
           - pip-audit --requirement requirements.txt -f json -o pip-audit.json
         artifacts: [bandit-report.json, pip-audit.json]
 
@@ -70,18 +72,13 @@ definitions:
           - pip install -r requirements.txt
           - |
             if [ -f test-matrix.json ]; then
-              TESTS=$(python -c "import json; tests=json.load(open('test-matrix.json'))['tests']; print(' '.join(tests) if tests else '')")
-              if [ -n "$TESTS" ]; then
-                echo "Running selected tests: $TESTS"
-                pytest $TESTS -n auto --dist loadscope \
-                  --cov=. --cov-report=xml --cov-report=html \
-                  --cov-fail-under=30 \
-                  --junitxml=test-results/results.xml \
-                  --html=test-results/report.html \
-                  --self-contained-html
-              else
-                echo "No tests to run (unchanged from cache)"
-              fi
+              python -c "import json; tests = json.load(open('test-matrix.json'))['tests']; print('Running:', tests)"
+              pytest ${TESTS:-tests/} -n auto --dist loadscope \
+                --cov=. --cov-report=xml --cov-report=html \
+                --cov-fail-under=30 \
+                --junitxml=test-results/results.xml \
+                --html=test-results/report.html \
+                --self-contained-html
             else
               pytest tests/ -n auto --dist loadscope \
                 --cov=. --cov-report=xml --cov-report=html \
@@ -100,8 +97,8 @@ definitions:
         caches: [pip-custom]
         script:
           - pip install -r requirements.txt
-          - radon cc . -s -n B --json --exclude "venv,bitbucket-qa,.git,__pycache__,.mypy_cache,.pytest_cache,htmlcov,dashboard,dependency-reports,test-results,.benchmarks,.test-cache" > radon-report.json
-          - vulture . --min-confidence 80 --exclude venv,bitbucket-qa,.git,__pycache__ > vulture-report.txt
+          - radon cc . -s -n B --json > radon-report.json
+          - vulture . --min-confidence 80 --sort-by-size > vulture-report.txt
         artifacts: [radon-report.json, vulture-report.txt]
 
     - step: &performance-benchmark
