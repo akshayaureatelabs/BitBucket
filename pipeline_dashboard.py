@@ -30,9 +30,15 @@ class PipelineDashboard:
         self.dashboard_dir.mkdir(exist_ok=True)
         self._init_database()
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open SQLite connection with foreign keys enforced."""
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
     def _init_database(self):
         """Initialize SQLite database"""
-        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn = self._connect()
         cursor = conn.cursor()
 
         cursor.execute(
@@ -105,7 +111,7 @@ class PipelineDashboard:
 
     def record_run(self, data: Dict[str, Any]):
         """Record pipeline run metrics"""
-        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn = self._connect()
         try:
             cursor = conn.cursor()
 
@@ -177,7 +183,7 @@ class PipelineDashboard:
 
     def get_metrics(self, days: int = 30) -> Dict:
         """Get pipeline metrics for last N days"""
-        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn = self._connect()
         try:
             cursor = conn.cursor()
 
