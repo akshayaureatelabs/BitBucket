@@ -11,19 +11,42 @@ Enforces:
 
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 _this_dir = Path(__file__).resolve().parent
-QA_DIR = _this_dir.parent
 
-REPO_ROOT = QA_DIR
-if not (REPO_ROOT / ".git").exists():
-    for candidate in QA_DIR.parents:
+
+def _find_repo_root(start: Path) -> Path:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        ).strip()
+        if out:
+            return Path(out).resolve()
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+        pass
+    for candidate in [start, *start.parents]:
         if (candidate / ".git").exists():
-            REPO_ROOT = candidate
-            break
+            return candidate
+    return start
+
+
+def _find_suite_root(start: Path) -> Path:
+    markers = ("code_scanner.py", "requirements.txt")
+    for candidate in [start, *start.parents]:
+        if all((candidate / m).is_file() for m in markers):
+            return candidate
+    return start.parent if start.name == "tests" else start
+
+
+QA_DIR = _find_suite_root(_this_dir)
+REPO_ROOT = _find_repo_root(QA_DIR)
 
 EXCLUDE_DIRS = {
     "venv", ".venv", "__pycache__", ".pytest_cache",
@@ -122,11 +145,15 @@ def test_pre_commit_hook_uses_venv_python():
     )
 
 
-def test_pre_commit_hook_runs_scanner():
+def test_pre_commit_hook_is_staged_syntax_only():
+    """Pre-commit must stay fast: staged syntax only; full scanner is pre-push."""
     if not precommit_path().exists():
         pytest.skip("pre-commit hook not installed yet")
     c = precommit_content()
-    assert "code_scanner.py" in c, "pre-commit hook must run code_scanner.py"
+    assert "git diff --cached" in c or "git diff --cached" in c.replace("\r", ""), (
+        "pre-commit hook must check staged files only"
+    )
+    # Installed hook may still mention scanner historically; source of truth is hooks/
 
 
 def test_pre_commit_hook_checks_staged_files():
@@ -141,6 +168,30 @@ def test_pre_commit_hook_blocks_on_errors():
         pytest.skip("pre-commit hook not installed yet")
     c = precommit_content()
     assert "COMMIT BLOCKED" in c, "pre-commit hook must block the commit on failure"
+
+
+def test_source_pre_commit_matches_unix_policy():
+    """hooks/pre-commit (Unix source) must be staged-syntax only."""
+    src = QA_DIR / "hooks" / "pre-commit"
+    if not src.exists():
+        pytest.skip("hooks/pre-commit not in tree")
+    c = src.read_text(encoding="utf-8")
+    assert "git diff --cached" in c or "diff --cached" in c
+    assert "code_scanner.py" not in c, (
+        "Unix pre-commit must not run full code_scanner (pre-push owns that)"
+    )
+
+
+def test_source_pre_commit_bat_matches_unix_policy():
+    """hooks/pre-commit.bat must mirror Unix: staged syntax only."""
+    src = QA_DIR / "hooks" / "pre-commit.bat"
+    if not src.exists():
+        pytest.skip("hooks/pre-commit.bat not in tree")
+    c = src.read_text(encoding="utf-8")
+    assert "diff --cached" in c
+    assert "code_scanner.py" not in c, (
+        "Windows pre-commit.bat must not run full code_scanner"
+    )
 
 
 # --- requirements.txt ---
