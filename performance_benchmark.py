@@ -85,9 +85,10 @@ class PerformanceBenchmark:
                         "kwargs": str(kwargs),
                     }
 
-                    if name not in self.current_results:
-                        self.current_results[name] = []
-                    self.current_results[name].append(benchmark_data)
+                    result_key = name or func.__name__
+                    if result_key not in self.current_results:
+                        self.current_results[result_key] = []
+                    self.current_results[result_key].append(benchmark_data)
 
                     self.results_history.append(benchmark_data)
                     self._save_current()
