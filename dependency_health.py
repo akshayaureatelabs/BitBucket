@@ -12,7 +12,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List
 
@@ -128,8 +128,10 @@ class DependencyHealthCheck:
         if package_name in self.pypi_data:
             cached = self.pypi_data[package_name]
             cached_time = datetime.fromisoformat(cached["cached_at"])
+            if cached_time.tzinfo is None:
+                cached_time = cached_time.replace(tzinfo=timezone.utc)
 
-            if datetime.now() - cached_time < timedelta(hours=24):
+            if datetime.now(timezone.utc) - cached_time < timedelta(hours=24):
                 return cached["data"]
 
         try:
@@ -141,7 +143,7 @@ class DependencyHealthCheck:
                 data = response.json()
 
                 self.pypi_data[package_name] = {
-                    "cached_at": datetime.now().isoformat(),
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
                     "data": data,
                 }
 
@@ -161,8 +163,10 @@ class DependencyHealthCheck:
         if cache_key in self.vuln_data:
             cached = self.vuln_data[cache_key]
             cached_time = datetime.fromisoformat(cached["cached_at"])
+            if cached_time.tzinfo is None:
+                cached_time = cached_time.replace(tzinfo=timezone.utc)
 
-            if datetime.now() - cached_time < timedelta(hours=6):
+            if datetime.now(timezone.utc) - cached_time < timedelta(hours=6):
                 return cached["vulnerabilities"]
 
         vulnerabilities = []
@@ -216,7 +220,7 @@ class DependencyHealthCheck:
                     logger.debug("PyUp API error for %s: %s", package_name, e)
 
             self.vuln_data[cache_key] = {
-                "cached_at": datetime.now().isoformat(),
+                "cached_at": datetime.now(timezone.utc).isoformat(),
                 "vulnerabilities": vulnerabilities,
             }
 
@@ -250,7 +254,9 @@ class DependencyHealthCheck:
 
             if release_dates:
                 latest_release = max(release_dates)
-                days_since_release = (datetime.now() - latest_release).days
+                if latest_release.tzinfo is None:
+                    latest_release = latest_release.replace(tzinfo=timezone.utc)
+                days_since_release = (datetime.now(timezone.utc) - latest_release).days
 
                 if days_since_release > 365:
                     score -= 20
@@ -264,7 +270,9 @@ class DependencyHealthCheck:
             cached_stats = self.pypistats_data.get(pkg_name)
             if cached_stats:
                 cached_at = datetime.fromisoformat(cached_stats["cached_at"])
-                if datetime.now() - cached_at < timedelta(hours=24):
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - cached_at < timedelta(hours=24):
                     downloads = cached_stats["downloads"]
                 else:
                     downloads = None
@@ -280,7 +288,7 @@ class DependencyHealthCheck:
                     data = response.json()
                     downloads = data.get("data", {}).get("last_month", 0)
                     self.pypistats_data[pkg_name] = {
-                        "cached_at": datetime.now().isoformat(),
+                        "cached_at": datetime.now(timezone.utc).isoformat(),
                         "downloads": downloads,
                     }
 
@@ -291,7 +299,7 @@ class DependencyHealthCheck:
                 elif downloads < 10000:
                     score -= 5
                     reasons.append(f"Moderate downloads: {downloads}/month")
-        except (requests.RequestException, ValueError, KeyError) as e:
+        except (requests.RequestException, ValueError, KeyError, TypeError) as e:
             logger.debug("Error fetching pypistats for %s: %s", pkg_name, e)
 
         if vulnerabilities:
@@ -397,7 +405,7 @@ class DependencyHealthCheck:
             "details": health["details"],
             "vulnerabilities": len(vulnerabilities),
             "vulnerability_details": vulnerabilities[:5],
-            "checked_at": datetime.now().isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def generate_report(self, results: List[Dict]) -> str:
@@ -470,7 +478,7 @@ class DependencyHealthCheck:
 </head>
 <body>
     <h1>Dependency Health Report</h1>
-    <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    <p>Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
 
     <div class="summary">
         <h2>Summary</h2>
@@ -497,7 +505,7 @@ class DependencyHealthCheck:
 
         report_file = (
             self.report_dir
-            / f"dependency_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            / f"dependency_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.html"
         )
         with open(report_file, "w", encoding="utf-8") as f:
             f.write(html)
