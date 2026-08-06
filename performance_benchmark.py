@@ -377,6 +377,7 @@ def main():
     benchmark = PerformanceBenchmark()
 
     if args.run_benchmarks:
+        # Benchmark real suite helpers (not a pure sleep toy)
         @benchmark.benchmark("json_roundtrip")
         def json_roundtrip():
             payload = {"n": list(range(500)), "msg": "bench" * 20}
