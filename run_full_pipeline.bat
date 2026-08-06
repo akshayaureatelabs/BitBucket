@@ -1,10 +1,14 @@
 @echo off
-setlocal enabledelayedexpansion`r`nset "OUTDIR=bitbucket-qa"`r`nif not exist "%OUTDIR%" mkdir "%OUTDIR%"
+setlocal enabledelayedexpansion
+REM Run from inside bitbucket-qa/ (or repo root during suite development).
+REM All reports stay in the current directory tree (isolated when under bitbucket-qa/).
+set "OUTDIR=."
+if not exist "%OUTDIR%\test-results" mkdir "%OUTDIR%\test-results"
 set TP=0& set TF=0
 
 echo.
 echo ========================================
-echo   🚀 Full Pipeline QA Suite
+echo   Full Pipeline QA Suite
 echo ========================================
 echo.
 
@@ -82,7 +86,7 @@ echo   [PASS] Dashboard & set /a TP+=1
 
 echo.
 echo ========================================
-echo   📊 Summary - Passed: !TP!  Failed: !TF!
+echo   Summary - Passed: !TP!  Failed: !TF!
 echo ========================================
 if !TF! gtr 0 ( echo   Some checks failed - review above ) else ( echo   All checks passed! )
 echo ========================================
