@@ -41,8 +41,20 @@ echo   bitbucket-qa - Pre-Push Quality Gate
 echo ========================================
 echo.
 
-REM 1. TESTS (blocking)
-echo ^>^>^> 1/3 Tests (blocking^)...
+mkdir test-results 2>nul
+
+REM 1. CODE SCANNER (blocking)
+echo ^>^>^> 1/4 Code Scanner (blocking^)...
+%PYTHON% code_scanner.py "%REPO_ROOT%"
+if %errorlevel% neq 0 (
+    echo PUSH BLOCKED - Fix the errors above before pushing.
+    exit /b 1
+)
+echo   Scanner passed
+echo.
+
+REM 2. TESTS (blocking)
+echo ^>^>^> 2/4 Tests (blocking^)...
 %PYTHON% -m pytest test_precheck.py tests/ -v --tb=short --junitxml=test-results\precheck.xml
 if %errorlevel% neq 0 (
     echo PUSH BLOCKED - fix failing tests
@@ -51,8 +63,8 @@ if %errorlevel% neq 0 (
 echo   Tests passed
 echo.
 
-REM 2. COVERAGE ^>= 30%% (blocking)
-echo ^>^>^> 2/3 Coverage ^>= 30%% (blocking^)...
+REM 3. COVERAGE >= 30%% (blocking)
+echo ^>^>^> 3/4 Coverage >= 30%% (blocking^)...
 %PYTHON% -m pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-fail-under=30 --junitxml=test-results\results.xml 2>nul
 if %errorlevel% neq 0 (
     echo PUSH BLOCKED - coverage below 30%%
@@ -61,8 +73,8 @@ if %errorlevel% neq 0 (
 echo   Coverage OK
 echo.
 
-REM 3. LINT ^& FORMAT (advisory)
-echo ^>^>^> 3/3 Lint ^& Format (advisory^)...
+REM 4. LINT ^& FORMAT (advisory)
+echo ^>^>^> 4/4 Lint ^& Format (advisory^)...
 %PYTHON% -m black --check . --diff --exclude venv 2>nul
 set B=%errorlevel%
 %PYTHON% -m isort --check-only . --diff --skip venv 2>nul
@@ -76,5 +88,7 @@ if %B% neq 0 if %I% neq 0 if %F% neq 0 (
 )
 echo.
 
-echo bitbucket-qa passed - push allowed
+echo ========================================
+echo   All checks passed - push allowed
+echo ========================================
 exit /b 0
