@@ -12,14 +12,18 @@ fi
 
 cd "$QA_DIR" || exit 0
 
-# Detect the venv Python
-if [ -f "venv/Scripts/python.exe" ]; then
+# Detect the venv Python (prefer repo-root venv created by setup_all.py)
+if [ -f "$REPO_ROOT/venv/Scripts/python.exe" ]; then
+    PYTHON="$REPO_ROOT/venv/Scripts/python.exe"
+elif [ -f "$REPO_ROOT/venv/bin/python" ]; then
+    PYTHON="$REPO_ROOT/venv/bin/python"
+elif [ -f "venv/Scripts/python.exe" ]; then
     PYTHON="venv/Scripts/python.exe"
 elif [ -f "venv/bin/python" ]; then
     PYTHON="venv/bin/python"
 else
     PYTHON="python"
-    echo "WARNING: bitbucket-qa venv not found; using system python."
+    echo "WARNING: venv not found; using system python."
 fi
 
 echo ""
