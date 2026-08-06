@@ -1,8 +1,19 @@
 @echo off
 setlocal enabledelayedexpansion
-REM Run from inside bitbucket-qa/ (or repo root during suite development).
-REM All reports stay in the current directory tree (isolated when under bitbucket-qa/).
-set "OUTDIR=."
+REM Auto-detect the QA suite folder so all reports resolve inside bitbucket-qa/.
+REM When run from the repo root (or a host project root), cd into bitbucket-qa/
+REM so the embedded tools and their reports stay isolated there.
+set "OUTDIR=%~dp0"
+if exist "%OUTDIR%bitbucket-qa\dependency_health.py" (
+    cd /d "%OUTDIR%bitbucket-qa"
+    set "OUTDIR=%cd%"
+) else (
+    set "OUTDIR=%cd%"
+    if exist "%OUTDIR%\bitbucket-qa\dependency_health.py" (
+        cd /d "%OUTDIR%\bitbucket-qa"
+        set "OUTDIR=%cd%"
+    )
+)
 if not exist "%OUTDIR%\test-results" mkdir "%OUTDIR%\test-results"
 set TP=0& set TF=0
 

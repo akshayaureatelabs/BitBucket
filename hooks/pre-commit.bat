@@ -5,7 +5,11 @@ REM Heavy checks (full scanner, tests, coverage) happen in pre-push.
 
 setlocal enabledelayedexpansion
 
-set "REPO_ROOT=%cd%"
+for /f "tokens=*" %%i in ('git rev-parse --show-toplevel 2^>nul') do set "REPO_ROOT=%%i"
+if "%REPO_ROOT%"=="" (
+    echo WARNING: not a git repository - skipping pre-commit check.
+    exit /b 0
+)
 set "QA_DIR=%REPO_ROOT%\bitbucket-qa"
 
 if not exist "%QA_DIR%" (
@@ -15,12 +19,25 @@ if not exist "%QA_DIR%" (
 
 cd /d "%QA_DIR%"
 
-REM Detect the venv Python
+REM Detect the venv Python - prefer the repo-root venv (created by setup_all.py)
+REM before the one inside bitbucket-qa/
 set "PYTHON=python"
-if exist "venv\Scripts\python.exe" (
-    set "PYTHON=venv\Scripts\python.exe"
+if exist "%REPO_ROOT%\venv\Scripts\python.exe" (
+    set "PYTHON=%REPO_ROOT%\venv\Scripts\python.exe"
 ) else (
-    echo WARNING: bitbucket-qa venv not found; using system python.
+    if exist "%REPO_ROOT%\venv\bin\python" (
+        set "PYTHON=%REPO_ROOT%\venv\bin\python"
+    ) else (
+        if exist "%QA_DIR%\venv\Scripts\python.exe" (
+            set "PYTHON=%QA_DIR%\venv\Scripts\python.exe"
+        ) else (
+            if exist "%QA_DIR%\venv\bin\python" (
+                set "PYTHON=%QA_DIR%\venv\bin\python"
+            ) else (
+                echo WARNING: bitbucket-qa venv not found; using system python.
+            )
+        )
+    )
 )
 
 echo.

@@ -1,5 +1,13 @@
 #!/bin/sh
 # Full Pipeline QA Suite - Run all checks (slow but comprehensive)
+# Auto-detect the QA suite folder so all reports resolve inside bitbucket-qa/.
+# When run from the repo root (or a host project root), cd into bitbucket-qa/
+# so the embedded tools and their reports stay isolated there.
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/bitbucket-qa/dependency_health.py" ]; then
+    cd "$SCRIPT_DIR/bitbucket-qa" || exit 1
+fi
+mkdir -p test-results
 PASS=0; FAIL=1; TP=0; TF=0
 pass() { echo "  ✅ $1"; TP=$((TP+1)); }
 fail() { echo "  ❌ $1"; TF=$((TF+1)); }
