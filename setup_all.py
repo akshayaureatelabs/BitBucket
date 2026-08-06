@@ -113,7 +113,7 @@ def write_qa_files(project_dir):
     for relpath, b64_data in EMBEDDED_FILES.items():
         if not b64_data:
             continue
-        filepath = project_dir / relpath
+        filepath = project_dir / QA_DIR / relpath
         filepath.parent.mkdir(parents=True, exist_ok=True)
         try:
             content = base64.b64decode(b64_data)
@@ -316,3 +316,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

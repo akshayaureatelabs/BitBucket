@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class PerformanceBenchmark:
     def __init__(self):
         self.base_dir = Path(__file__).parent
-        self.benchmark_dir = self.base_dir / ".benchmarks"
+        self.benchmark_dir = self.base_dir / "bitbucket-qa" / ".benchmarks"
         self.benchmark_dir.mkdir(exist_ok=True)
 
         self.baseline_file = self.benchmark_dir / "baseline.json"

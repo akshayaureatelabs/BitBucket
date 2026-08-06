@@ -25,8 +25,8 @@ class PipelineDashboard:
 
     def __init__(self):
         self.base_dir = Path(__file__).parent
-        self.db_path = self.base_dir / "pipeline-metrics.db"
-        self.dashboard_dir = self.base_dir / "dashboard"
+        self.db_path = self.base_dir / "bitbucket-qa" / "pipeline-metrics.db"
+        self.dashboard_dir = self.base_dir / "bitbucket-qa" / "dashboard"
         self.dashboard_dir.mkdir(exist_ok=True)
         self._init_database()
 

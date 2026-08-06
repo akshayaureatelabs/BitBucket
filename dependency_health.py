@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 class DependencyHealthCheck:
     def __init__(self):
         self.base_dir = Path(__file__).parent
-        self.report_dir = self.base_dir / "dependency-reports"
+        self.report_dir = self.base_dir / "bitbucket-qa" / "dependency-reports"
         self.report_dir.mkdir(exist_ok=True)
 
         self.requirements_file = self.base_dir / "requirements.txt"

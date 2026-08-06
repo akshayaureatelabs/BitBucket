@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal enabledelayedexpansion`r`nset "OUTDIR=bitbucket-qa"`r`nif not exist "%OUTDIR%" mkdir "%OUTDIR%"
 set TP=0& set TF=0
 
 echo.
@@ -12,7 +12,7 @@ REM 1/9
 echo ========================================
 echo   1/9  Precheck ^& Unit Tests
 echo ========================================
-python -m pytest test_precheck.py tests/ -v --tb=short --junitxml=test-results/precheck.xml
+python -m pytest test_precheck.py tests/ -v --tb=short --junitxml=%OUTDIR%\test-results\precheck.xml
 if !ERRORLEVEL! equ 0 ( echo   [PASS] Tests & set /a TP+=1 ) else ( echo   [FAIL] Tests & set /a TF+=1 )
 
 REM 2/9
@@ -38,23 +38,23 @@ REM 4/9
 echo ========================================
 echo   4/9  Security Scan
 echo ========================================
-python -m bandit -r . -ll -f json -o bandit-report.json --exclude venv 2>nul
-python -m pip_audit --requirement requirements.txt -f json -o pip-audit.json 2>nul
+python -m bandit -r . -ll -f json -o %OUTDIR%\bandit-report.json --exclude venv 2>nul
+python -m pip_audit --requirement requirements.txt -f json -o %OUTDIR%\pip-audit.json 2>nul
 echo   [PASS] Security & set /a TP+=1
 
 REM 5/9
 echo ========================================
 echo   5/9  Complexity ^& Dead Code
 echo ========================================
-python -m radon cc . -s -n B --json > radon-report.json 2>nul
-python -m vulture . --min-confidence 80 --sort-by-size 2>nul > vulture-report.txt
+python -m radon cc . -s -n B --json > %OUTDIR%\radon-report.json 2>nul
+python -m vulture . --min-confidence 80 --sort-by-size 2>nul > %OUTDIR%\vulture-report.txt
 echo   [PASS] Complexity & set /a TP+=1
 
 REM 6/9
 echo ========================================
 echo   6/9  Tests ^& Coverage
 echo ========================================
-python -m pytest tests/ -n auto --dist loadscope --cov=. --cov-report=xml --cov-report=html --cov-fail-under=30 --junitxml=test-results/results.xml --html=test-results/report.html --self-contained-html 2>nul
+python -m pytest tests/ -n auto --dist loadscope --cov=. --cov-report=xml --cov-report=html --cov-fail-under=30 --junitxml=%OUTDIR%\test-results\results.xml --html=%OUTDIR%\test-results\report.html --self-contained-html 2>nul
 if !ERRORLEVEL! equ 0 ( echo   [PASS] Coverage ^>=^ 30 & set /a TP+=1 ) else ( echo   [FAIL] Coverage & set /a TF+=1 )
 
 REM 7/9
